@@ -1,5 +1,6 @@
 import { createWorkersAI } from "workers-ai-provider";
-import { callable, routeAgentRequest, type Schedule } from "agents";
+import { DurableObject } from "cloudflare:workers";
+import { callable, getAgentByName, type Schedule } from "agents";
 import { getSchedulePrompt, scheduleSchema } from "agents/schedule";
 import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import {
@@ -10,6 +11,142 @@ import {
   tool
 } from "ai";
 import { z } from "zod";
+import {
+  noteCandidateSchema,
+  noteCandidatesOutputSchema,
+  savedNoteSchema,
+  type NoteCandidate,
+  type SavedNote
+} from "./notes";
+
+const ANONYMOUS_ID_COOKIE = "image_mind_anonymous_id";
+
+function readCookie(request: Request, name: string) {
+  const prefix = `${name}=`;
+  for (const cookie of (request.headers.get("cookie") ?? "").split(";")) {
+    const value = cookie.trim();
+    if (value.startsWith(prefix)) return value.slice(prefix.length);
+  }
+  return null;
+}
+
+function anonymousSubject(request: Request) {
+  const id = readCookie(request, ANONYMOUS_ID_COOKIE);
+  return id &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      id
+    )
+    ? `anonymous:${id}`
+    : null;
+}
+
+function anonymousCookie(id: string, request: Request) {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `${ANONYMOUS_ID_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${secure}`;
+}
+
+type NoteRow = {
+  id: string;
+  kind: NoteCandidate["kind"];
+  title: string;
+  author: string | null;
+  content: string;
+  summary: string;
+  source_url: string | null;
+  published_at: string | null;
+  topics_json: string;
+  confidence: number;
+  created_at: string;
+};
+
+function rowToNote(row: NoteRow): SavedNote {
+  return savedNoteSchema.parse({
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    author: row.author,
+    content: row.content,
+    summary: row.summary,
+    sourceUrl: row.source_url,
+    publishedAt: row.published_at,
+    topics: JSON.parse(row.topics_json) as string[],
+    confidence: row.confidence,
+    createdAt: row.created_at
+  });
+}
+
+export class NotesStore extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS saved_notes (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        author TEXT,
+        content TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        source_url TEXT,
+        published_at TEXT,
+        topics_json TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    `);
+    this.ctx.storage.sql.exec(
+      "CREATE INDEX IF NOT EXISTS saved_notes_created_at ON saved_notes(created_at DESC)"
+    );
+  }
+
+  save(input: NoteCandidate): SavedNote {
+    const candidate = noteCandidateSchema.parse(input);
+    const note: SavedNote = {
+      ...candidate,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString()
+    };
+    this.ctx.storage.sql.exec(
+      `INSERT INTO saved_notes (
+        id, kind, title, author, content, summary, source_url, published_at,
+        topics_json, confidence, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      note.id,
+      note.kind,
+      note.title,
+      note.author,
+      note.content,
+      note.summary,
+      note.sourceUrl,
+      note.publishedAt,
+      JSON.stringify(note.topics),
+      note.confidence,
+      note.createdAt
+    );
+    return note;
+  }
+
+  list(): SavedNote[] {
+    return this.ctx.storage.sql
+      .exec<NoteRow>("SELECT * FROM saved_notes ORDER BY created_at DESC")
+      .toArray()
+      .map(rowToNote);
+  }
+
+  get(id: string): SavedNote | null {
+    const rows = this.ctx.storage.sql
+      .exec<NoteRow>("SELECT * FROM saved_notes WHERE id = ? LIMIT 1", id)
+      .toArray();
+    return rows[0] ? rowToNote(rows[0]) : null;
+  }
+
+  delete(id: string): boolean {
+    const exists = this.get(id) !== null;
+    if (exists) {
+      this.ctx.storage.sql.exec("DELETE FROM saved_notes WHERE id = ?", id);
+    }
+    return exists;
+  }
+}
 
 export class ChatAgent extends AIChatAgent<Env> {
   maxPersistedMessages = 100;
@@ -35,7 +172,9 @@ export class ChatAgent extends AIChatAgent<Env> {
 
   @callable()
   async addServer(name: string, url: string) {
-    return await this.addMcpServer(name, url);
+    return await this.addMcpServer(name, url, {
+      callbackPath: "/oauth/callback"
+    });
   }
 
   @callable()
@@ -43,15 +182,38 @@ export class ChatAgent extends AIChatAgent<Env> {
     await this.removeMcpServer(serverId);
   }
 
+  @callable()
+  async saveNote(input: NoteCandidate) {
+    const candidate = noteCandidateSchema.parse(input);
+    const notes = this.env.NotesStore.getByName(this.name);
+    return await notes.save(candidate);
+  }
+
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const mcpTools = this.mcp.getAITools();
     const workersai = createWorkersAI({ binding: this.env.AI });
+
+    const latestMessage = this.messages.at(-1);
+    const hasImage =
+      latestMessage?.role === "user" &&
+      latestMessage.parts.some(
+        (part) =>
+          part.type === "file" &&
+          typeof part.mediaType === "string" &&
+          part.mediaType.startsWith("image/")
+      );
 
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.6", {
         sessionAffinity: this.sessionAffinity
       }),
-      system: `You are a helpful assistant that can understand images. You can check the weather, get the user's timezone, run calculations, and schedule tasks. When users share images, describe what you see and answer questions about them.
+      system: `You are a helpful assistant that can understand images.
+You can check the weather, get the user's timezone, run calculations, and schedule tasks.
+When the latest user message contains an image, treat it as a screenshot to turn into a saved-note candidate set. Analyze only visible evidence and call createNoteCandidates exactly once with exactly three useful alternative note objects. The three candidates must use the same schema and must be notes, never images.
+
+Keep every candidate brief and to the point. Extract the screenshot's single core idea or actionable tip instead of expanding it into an essay. Titles should be about 3 to 8 words, content should be 1 or 2 short sentences, summaries should be one short sentence, and topics should contain only 1 to 5 specific tags. The candidates may use different concise wording or emphasis, but must not add background, implications, community commentary, use cases, or other details that are not central to the screenshot. Preserve visible code and commands exactly. For a tip about scrollbar-gutter: stable, a good core note is: "Use scrollbar-gutter: stable to reserve scrollbar space and avoid layout shifts when the scrollbar disappears."
+
+Use null when author, source URL, or published date is not visible; never invent those values. Do not save any candidate yourself—the user must choose one in the UI.
 
 ${getSchedulePrompt({ date: new Date() })}
 
@@ -64,6 +226,13 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
       tools: {
         // MCP tools from connected servers
         ...mcpTools,
+
+        createNoteCandidates: tool({
+          description:
+            "Return exactly three concise structured note candidates extracted from the attached screenshot. Capture only the core actionable point in 1 or 2 short sentences per candidate, with no essay or added commentary. Never call this without an image in the latest user message.",
+          inputSchema: noteCandidatesOutputSchema,
+          execute: async (input) => noteCandidatesOutputSchema.parse(input)
+        }),
 
         // Server-side tool: runs automatically on the server
         getWeather: tool({
@@ -155,7 +324,7 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
           description: "List all tasks that have been scheduled",
           inputSchema: z.object({}),
           execute: async () => {
-            const tasks = this.getSchedules();
+            const tasks = await this.listSchedules();
             return tasks.length > 0 ? tasks : "No scheduled tasks found.";
           }
         }),
@@ -175,7 +344,10 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
           }
         })
       },
-      stopWhen: stepCountIs(5),
+      toolChoice: hasImage
+        ? { type: "tool", toolName: "createNoteCandidates" }
+        : "auto",
+      stopWhen: stepCountIs(hasImage ? 1 : 5),
       abortSignal: options?.abortSignal
     });
 
@@ -202,9 +374,56 @@ If the user asks to schedule a task, use the schedule tool to schedule the task.
 
 export default {
   async fetch(request: Request, env: Env) {
-    return (
-      (await routeAgentRequest(request, env)) ||
-      new Response("Not found", { status: 404 })
-    );
+    const url = new URL(request.url);
+
+    if (url.pathname === "/api/session" && request.method === "POST") {
+      const existingSubject = anonymousSubject(request);
+      if (existingSubject) return Response.json({ ready: true });
+
+      const id = crypto.randomUUID();
+      return Response.json(
+        { ready: true },
+        { headers: { "set-cookie": anonymousCookie(id, request) } }
+      );
+    }
+
+    const subject = anonymousSubject(request);
+    if (url.pathname === "/chat") {
+      if (!subject) return new Response("Unauthorized", { status: 401 });
+      const agent = await getAgentByName(env.ChatAgent, subject);
+      return agent.fetch(request);
+    }
+
+    if (url.pathname === "/api/notes" && request.method === "GET") {
+      if (!subject) return new Response("Unauthorized", { status: 401 });
+      const notes = env.NotesStore.getByName(subject);
+      return Response.json({ notes: await notes.list() });
+    }
+
+    const noteMatch = url.pathname.match(/^\/api\/notes\/([^/]+)$/);
+    if (
+      noteMatch &&
+      (request.method === "GET" || request.method === "DELETE")
+    ) {
+      if (!subject) return new Response("Unauthorized", { status: 401 });
+      const id = decodeURIComponent(noteMatch[1]);
+      const notes = env.NotesStore.getByName(subject);
+      if (request.method === "GET") {
+        const note = await notes.get(id);
+        return note
+          ? Response.json({ note })
+          : new Response("Not found", { status: 404 });
+      }
+      const deleted = await notes.delete(id);
+      return new Response(null, { status: deleted ? 204 : 404 });
+    }
+
+    if (url.pathname === "/oauth/callback") {
+      if (!subject) return new Response("Unauthorized", { status: 401 });
+      const agent = await getAgentByName(env.ChatAgent, subject);
+      return agent.fetch(request);
+    }
+
+    return new Response("Not found", { status: 404 });
   }
 } satisfies ExportedHandler<Env>;

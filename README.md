@@ -8,6 +8,32 @@ A starter template for building AI chat agents on Cloudflare, powered by the [Ag
 
 Uses Workers AI (no API key required), with tools for weather, timezone detection, calculations with approval, task scheduling, and vision (image input).
 
+## Screenshot notes
+
+Attach or paste a screenshot in chat. The vision model returns exactly three
+validated note candidates, and the UI lets you save one candidate to the
+Library at `/library`. The other two candidates are not stored. Saved notes
+live in a separate SQLite-backed `NotesStore` Durable Object, so clearing chat
+history does not clear the library. The original screenshot is not copied into
+the saved-note row.
+
+### Development identity boundary
+
+This starter currently has no authentication provider. For local and
+development use, `POST /api/session` creates a random anonymous ID in an
+HttpOnly, SameSite cookie. The Worker—not a browser-provided query parameter or
+request body—uses that cookie through one routing function to select both the
+user's `ChatAgent` and `NotesStore`. The public chat WebSocket uses the custom
+`/chat` route; generic named-agent routes are not exposed.
+
+This is not production authentication: the cookie is not signed, there is no
+account recovery or cross-device identity, clearing it loses access to that
+anonymous library, and a client able to forge another cookie value could select
+that Durable Object. Before deployment, replace `anonymousSubject()` and the
+session endpoint with a verified authentication subject (or a cryptographically
+signed server session), while keeping the shared server-controlled routing
+boundary.
+
 ## Quick start
 
 ```bash
@@ -25,14 +51,15 @@ Try these prompts to see the different features:
 - **"What timezone am I in?"** — client-side tool (browser provides the answer)
 - **"Calculate 5000 \* 3"** — approval tool (asks you before running)
 - **"Remind me in 5 minutes to take a break"** — scheduling
-- **Drop an image and ask "What's in this image?"** — vision (image understanding)
+- **Drop or paste a screenshot** — get three selectable note candidates
 
 ## Project structure
 
 ```
 src/
-  server.ts    # Chat agent with tools and scheduling
-  app.tsx      # Chat UI built with Kumo components
+  server.ts    # Chat agent, NotesStore, and server-controlled routing
+  notes.ts     # Shared note schemas and types
+  app.tsx      # Chat and saved-note library UI
   client.tsx   # React entry point
   styles.css   # Tailwind + Kumo styles
 ```

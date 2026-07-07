@@ -9,7 +9,7 @@ import {
   Button,
   Empty,
   InputArea,
-  Surface,
+  LayerCard,
   Switch,
   Text
 } from "@cloudflare/kumo";
@@ -36,8 +36,34 @@ import {
   XIcon,
   WrenchIcon,
   PaperclipIcon,
-  ImageIcon
+  ImageIcon,
+  BookmarkSimpleIcon,
+  BooksIcon,
+  ArrowSquareOutIcon,
+  CalendarBlankIcon
 } from "@phosphor-icons/react";
+import {
+  noteCandidatesOutputSchema,
+  savedNoteSchema,
+  savedNotesResponseSchema,
+  type NoteCandidate,
+  type SavedNote
+} from "./notes";
+
+let sessionPromise: Promise<void> | null = null;
+
+function ensureAnonymousSession() {
+  sessionPromise ??= fetch("/api/session", {
+    method: "POST",
+    credentials: "same-origin"
+  }).then((response) => {
+    if (!response.ok) {
+      sessionPromise = null;
+      throw new Error(`Session setup failed (${response.status})`);
+    }
+  });
+  return sessionPromise;
+}
 
 // ── Attachment helpers ────────────────────────────────────────────────
 
@@ -97,22 +123,64 @@ function ThemeToggle() {
 
 function ToolPartView({
   part,
-  addToolApprovalResponse
+  addToolApprovalResponse,
+  saveNote
 }: {
   part: UIMessage["parts"][number];
   addToolApprovalResponse: (response: {
     id: string;
     approved: boolean;
   }) => void;
+  saveNote: (candidate: NoteCandidate) => Promise<SavedNote>;
 }) {
   if (!isToolUIPart(part)) return null;
   const toolName = getToolName(part);
+
+  if (toolName === "createNoteCandidates") {
+    if (part.state === "output-available") {
+      const parsed = noteCandidatesOutputSchema.safeParse(part.output);
+      if (!parsed.success) {
+        return (
+          <div className="flex justify-start">
+            <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring ring-kumo-line">
+              <Text size="sm" bold>
+                Couldn’t display note suggestions
+              </Text>
+              <Text size="xs" variant="secondary">
+                The screenshot analysis returned an unexpected format. Please
+                try again.
+              </Text>
+            </LayerCard>
+          </div>
+        );
+      }
+      return (
+        <NoteCandidatePicker
+          candidates={parsed.data.candidates}
+          saveNote={saveNote}
+        />
+      );
+    }
+
+    if (part.state === "input-available" || part.state === "input-streaming") {
+      return (
+        <div className="flex justify-start">
+          <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring ring-kumo-line">
+            <div className="flex items-center gap-2">
+              <ImageIcon size={16} className="text-kumo-accent animate-pulse" />
+              <Text size="sm">Turning your screenshot into notes…</Text>
+            </div>
+          </LayerCard>
+        </div>
+      );
+    }
+  }
 
   // Completed
   if (part.state === "output-available") {
     return (
       <div className="flex justify-start">
-        <Surface className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
+        <LayerCard className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
           <div className="flex items-center gap-2 mb-1">
             <GearIcon size={14} className="text-kumo-inactive" />
             <Text size="xs" variant="secondary" bold>
@@ -125,7 +193,7 @@ function ToolPartView({
               {JSON.stringify(part.output, null, 2)}
             </Text>
           </div>
-        </Surface>
+        </LayerCard>
       </div>
     );
   }
@@ -135,7 +203,7 @@ function ToolPartView({
     const approvalId = (part.approval as { id?: string })?.id;
     return (
       <div className="flex justify-start">
-        <Surface className="max-w-[85%] px-4 py-3 rounded-xl ring-2 ring-kumo-warning">
+        <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring-2 ring-kumo-warning">
           <div className="flex items-center gap-2 mb-2">
             <GearIcon size={14} className="text-kumo-warning" />
             <Text size="sm" bold>
@@ -173,7 +241,7 @@ function ToolPartView({
               Reject
             </Button>
           </div>
-        </Surface>
+        </LayerCard>
       </div>
     );
   }
@@ -186,7 +254,7 @@ function ToolPartView({
   ) {
     return (
       <div className="flex justify-start">
-        <Surface className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
+        <LayerCard className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
           <div className="flex items-center gap-2">
             <XCircleIcon size={14} className="text-kumo-danger" />
             <Text size="xs" variant="secondary" bold>
@@ -194,7 +262,7 @@ function ToolPartView({
             </Text>
             <Badge variant="secondary">Rejected</Badge>
           </div>
-        </Surface>
+        </LayerCard>
       </div>
     );
   }
@@ -203,19 +271,129 @@ function ToolPartView({
   if (part.state === "input-available" || part.state === "input-streaming") {
     return (
       <div className="flex justify-start">
-        <Surface className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
+        <LayerCard className="max-w-[85%] px-4 py-2.5 rounded-xl ring ring-kumo-line">
           <div className="flex items-center gap-2">
             <GearIcon size={14} className="text-kumo-inactive animate-spin" />
             <Text size="xs" variant="secondary">
               Running {toolName}...
             </Text>
           </div>
-        </Surface>
+        </LayerCard>
       </div>
     );
   }
 
   return null;
+}
+
+function NoteCandidatePicker({
+  candidates,
+  saveNote
+}: {
+  candidates: NoteCandidate[];
+  saveNote: (candidate: NoteCandidate) => Promise<SavedNote>;
+}) {
+  const [savingIndex, setSavingIndex] = useState<number | null>(null);
+  const [savedIndex, setSavedIndex] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const choose = async (candidate: NoteCandidate, index: number) => {
+    if (savingIndex !== null || savedIndex !== null) return;
+    setSavingIndex(index);
+    setError(null);
+    try {
+      await saveNote(candidate);
+      setSavedIndex(index);
+    } catch (cause) {
+      console.error("Failed to save note:", cause);
+      setError("The note couldn’t be saved. Please try again.");
+    } finally {
+      setSavingIndex(null);
+    }
+  };
+
+  return (
+    <section className="space-y-3" aria-label="Suggested notes">
+      <div className="flex items-center gap-2">
+        <BookmarkSimpleIcon size={18} className="text-kumo-accent" />
+        <Text size="sm" bold>
+          Choose one note to save
+        </Text>
+        <Badge variant="secondary">3 suggestions</Badge>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        {candidates.map((candidate, index) => {
+          const isSaved = savedIndex === index;
+          const isSaving = savingIndex === index;
+          return (
+            <LayerCard
+              key={`${candidate.title}-${index}`}
+              className={`rounded-xl ring p-4 flex flex-col gap-3 ${
+                isSaved ? "ring-2 ring-kumo-success" : "ring-kumo-line"
+              } ${savedIndex !== null && !isSaved ? "opacity-55" : ""}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant="secondary">
+                  {candidate.kind.replace("-", " ")}
+                </Badge>
+                <Text size="xs" variant="secondary">
+                  {Math.round(candidate.confidence * 100)}% confidence
+                </Text>
+              </div>
+              <div>
+                <h3 className="font-semibold text-kumo-default leading-snug">
+                  {candidate.title}
+                </h3>
+                {candidate.author && (
+                  <p className="mt-1 text-xs text-kumo-subtle">
+                    By {candidate.author}
+                  </p>
+                )}
+              </div>
+              <p className="text-sm text-kumo-default leading-relaxed line-clamp-4">
+                {candidate.summary}
+              </p>
+              {candidate.topics.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {candidate.topics.slice(0, 4).map((topic) => (
+                    <Badge key={topic} variant="secondary">
+                      {topic}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <Button
+                variant={isSaved ? "secondary" : "primary"}
+                size="sm"
+                icon={
+                  isSaved ? (
+                    <CheckCircleIcon size={15} />
+                  ) : (
+                    <BookmarkSimpleIcon size={15} />
+                  )
+                }
+                disabled={savedIndex !== null || savingIndex !== null}
+                onClick={() => choose(candidate, index)}
+                className="mt-auto"
+              >
+                {isSaved ? "Saved" : isSaving ? "Saving…" : "Save this note"}
+              </Button>
+            </LayerCard>
+          );
+        })}
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-kumo-danger">
+          {error}
+        </p>
+      )}
+      {savedIndex !== null && (
+        <p className="text-sm text-kumo-success">
+          Saved to your library. The other suggestions were not stored.
+        </p>
+      )}
+    </section>
+  );
 }
 
 // ── Main chat ─────────────────────────────────────────────────────────
@@ -244,6 +422,11 @@ function Chat() {
 
   const agent = useAgent<ChatAgent>({
     agent: "ChatAgent",
+    basePath: "chat",
+    query: async () => {
+      await ensureAnonymousSession();
+      return {};
+    },
     onOpen: useCallback(() => setConnected(true), []),
     onClose: useCallback(() => setConnected(false), []),
     onError: useCallback(
@@ -339,6 +522,14 @@ function Chat() {
   });
 
   const isStreaming = status === "streaming" || status === "submitted";
+
+  const saveNote = useCallback(
+    async (candidate: NoteCandidate) => {
+      const saved = await agent.stub.saveNote(candidate);
+      return savedNoteSchema.parse(saved);
+    },
+    [agent]
+  );
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -480,6 +671,13 @@ function Chat() {
               />
             </div>
             <ThemeToggle />
+            <Button
+              variant="secondary"
+              icon={<BooksIcon size={16} />}
+              onClick={() => window.location.assign("/library")}
+            >
+              Library
+            </Button>
             <div className="relative" ref={mcpPanelRef}>
               <Button
                 variant="secondary"
@@ -498,7 +696,7 @@ function Chat() {
               {/* MCP Dropdown Panel */}
               {showMcpPanel && (
                 <div className="absolute right-0 top-full mt-2 w-96 z-50">
-                  <Surface className="rounded-xl ring ring-kumo-line shadow-lg p-4 space-y-4">
+                  <LayerCard className="rounded-xl ring ring-kumo-line shadow-lg p-4 space-y-4">
                     {/* Panel Header */}
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -643,7 +841,7 @@ function Chat() {
                         </div>
                       </div>
                     )}
-                  </Surface>
+                  </LayerCard>
                 </div>
               )}
             </div>
@@ -712,6 +910,7 @@ function Chat() {
                     key={part.toolCallId}
                     part={part}
                     addToolApprovalResponse={addToolApprovalResponse}
+                    saveNote={saveNote}
                   />
                 ))}
 
@@ -934,7 +1133,223 @@ function Chat() {
   );
 }
 
+function Library() {
+  const [notes, setNotes] = useState<SavedNote[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadNotes = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await ensureAnonymousSession();
+      const response = await fetch("/api/notes", {
+        credentials: "same-origin",
+        headers: { accept: "application/json" }
+      });
+      if (!response.ok) throw new Error(`Request failed (${response.status})`);
+      const payload = savedNotesResponseSchema.parse(await response.json());
+      setNotes(payload.notes);
+    } catch (cause) {
+      console.error("Failed to load notes:", cause);
+      setError("Your library couldn’t be loaded. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotes();
+  }, [loadNotes]);
+
+  const deleteNote = async (note: SavedNote) => {
+    if (!window.confirm(`Delete “${note.title}”?`)) return;
+    setDeletingId(note.id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/notes/${encodeURIComponent(note.id)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin"
+        }
+      );
+      if (!response.ok) throw new Error(`Request failed (${response.status})`);
+      setNotes((current) => current.filter((item) => item.id !== note.id));
+    } catch (cause) {
+      console.error("Failed to delete note:", cause);
+      setError("That note couldn’t be deleted. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-kumo-elevated text-kumo-default">
+      <header className="px-5 py-4 bg-kumo-base border-b border-kumo-line">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <BooksIcon size={24} className="text-kumo-accent" />
+            <div>
+              <h1 className="text-lg font-semibold">Saved notes</h1>
+              <p className="text-xs text-kumo-subtle">
+                The ideas you chose to keep
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button
+              variant="primary"
+              icon={<ChatCircleDotsIcon size={16} />}
+              onClick={() => window.location.assign("/")}
+            >
+              Back to chat
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-5 py-8">
+        {error && (
+          <LayerCard className="mb-5 rounded-xl ring ring-kumo-danger p-4 flex items-center justify-between gap-4">
+            <p role="alert" className="text-sm text-kumo-danger">
+              {error}
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void loadNotes()}
+            >
+              Retry
+            </Button>
+          </LayerCard>
+        )}
+
+        {loading ? (
+          <div
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            aria-label="Loading saved notes"
+          >
+            {[0, 1, 2].map((item) => (
+              <div
+                key={item}
+                className="h-56 rounded-xl bg-kumo-control animate-pulse"
+              />
+            ))}
+          </div>
+        ) : notes.length === 0 && !error ? (
+          <Empty
+            icon={<BookmarkSimpleIcon size={34} />}
+            title="Your library is empty"
+            contents={
+              <div className="space-y-3 text-center">
+                <Text size="sm" variant="secondary">
+                  Add a screenshot in chat, then choose the note that captures
+                  it best.
+                </Text>
+                <Button
+                  variant="primary"
+                  onClick={() => window.location.assign("/")}
+                >
+                  Add a screenshot
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {notes.map((note) => (
+              <LayerCard
+                key={note.id}
+                className="rounded-xl ring ring-kumo-line p-5 space-y-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Badge variant="secondary">
+                    {note.kind.replace("-", " ")}
+                  </Badge>
+                  <Text size="xs" variant="secondary">
+                    {Math.round(note.confidence * 100)}% confidence
+                  </Text>
+                </div>
+                <div>
+                  <h2 className="font-semibold leading-snug">{note.title}</h2>
+                  {note.author && (
+                    <p className="mt-1 text-xs text-kumo-subtle">
+                      By {note.author}
+                    </p>
+                  )}
+                </div>
+                <p className="text-sm leading-relaxed text-kumo-default">
+                  {note.summary}
+                </p>
+                <details className="text-sm">
+                  <summary className="cursor-pointer text-kumo-accent">
+                    Read extracted text
+                  </summary>
+                  <p className="mt-2 whitespace-pre-wrap leading-relaxed text-kumo-subtle">
+                    {note.content}
+                  </p>
+                </details>
+                {note.topics.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {note.topics.map((topic) => (
+                      <Badge key={topic} variant="secondary">
+                        {topic}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="pt-3 border-t border-kumo-line space-y-2">
+                  {(note.publishedAt || note.createdAt) && (
+                    <div className="flex items-center gap-1.5 text-xs text-kumo-subtle">
+                      <CalendarBlankIcon size={13} />
+                      {formatNoteDate(note.publishedAt ?? note.createdAt)}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    {note.sourceUrl ? (
+                      <a
+                        href={note.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-kumo-accent hover:underline"
+                      >
+                        Open source <ArrowSquareOutIcon size={14} />
+                      </a>
+                    ) : (
+                      <span />
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      icon={<TrashIcon size={14} />}
+                      disabled={deletingId !== null}
+                      onClick={() => void deleteNote(note)}
+                    >
+                      {deletingId === note.id ? "Deleting…" : "Delete"}
+                    </Button>
+                  </div>
+                </div>
+              </LayerCard>
+            ))}
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function formatNoteDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+}
+
 export default function App() {
+  const isLibrary = window.location.pathname === "/library";
   return (
     <Toasty>
       <Suspense
@@ -944,7 +1359,7 @@ export default function App() {
           </div>
         }
       >
-        <Chat />
+        {isLibrary ? <Library /> : <Chat />}
       </Suspense>
     </Toasty>
   );
