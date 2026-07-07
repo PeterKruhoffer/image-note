@@ -13,8 +13,10 @@ import { NoteCard } from "./note-card";
 export function LibraryPage() {
   const [notes, setNotes] = useState<SavedNote[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const loadNotes = useCallback(async () => {
     setLoading(true);
@@ -28,6 +30,7 @@ export function LibraryPage() {
       if (!response.ok) throw new Error(`Request failed (${response.status})`);
       const payload = savedNotesResponseSchema.parse(await response.json());
       setNotes(payload.notes);
+      setNextCursor(payload.nextCursor);
     } catch (cause) {
       console.error("Failed to load notes:", cause);
       setError("Your library couldn’t be loaded. Please try again.");
@@ -39,6 +42,28 @@ export function LibraryPage() {
   useEffect(() => {
     void loadNotes();
   }, [loadNotes]);
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({ cursor: nextCursor });
+      const response = await fetch(`/api/notes?${query}`, {
+        credentials: "same-origin",
+        headers: { accept: "application/json" }
+      });
+      if (!response.ok) throw new Error(`Request failed (${response.status})`);
+      const payload = savedNotesResponseSchema.parse(await response.json());
+      setNotes((current) => [...current, ...payload.notes]);
+      setNextCursor(payload.nextCursor);
+    } catch (cause) {
+      console.error("Failed to load more notes:", cause);
+      setError("More notes couldn’t be loaded. Please try again.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const deleteNote = async (note: SavedNote) => {
     if (!window.confirm(`Delete “${note.title}”?`)) return;
@@ -136,16 +161,29 @@ export function LibraryPage() {
             }
           />
         ) : (
-          <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {notes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                deleting={deletingId === note.id}
-                deleteDisabled={deletingId !== null}
-                onDelete={(item) => void deleteNote(item)}
-              />
-            ))}
+          <div className="space-y-6">
+            <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {notes.map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  deleting={deletingId === note.id}
+                  deleteDisabled={deletingId !== null}
+                  onDelete={(item) => void deleteNote(item)}
+                />
+              ))}
+            </div>
+            {nextCursor && (
+              <div className="flex justify-center">
+                <Button
+                  variant="secondary"
+                  disabled={loadingMore}
+                  onClick={() => void loadMore()}
+                >
+                  {loadingMore ? "Loading…" : "Load more"}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </main>

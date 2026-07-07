@@ -6,14 +6,13 @@ import {
   useState
 } from "react";
 import { Text } from "@cloudflare/kumo";
-import { useKumoToastManager } from "@cloudflare/kumo/components/toast";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { ImageIcon } from "@phosphor-icons/react";
 import { useAgent } from "agents/react";
 import type { MCPServersState } from "agents";
 import type { NoteCandidate } from "../../notes";
 import { savedNoteSchema } from "../../notes";
-import type { ChatAgent } from "../../server";
+import type { ChatAgent } from "../../server/chat-agent";
 import { ensureAnonymousSession } from "../../lib/anonymous-session";
 import {
   createAttachment,
@@ -33,7 +32,6 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const toasts = useKumoToastManager();
   const [mcpState, setMcpState] = useState<MCPServersState>({
     prompts: [],
     resources: [],
@@ -64,24 +62,7 @@ export function ChatPage() {
     ),
     onMcpUpdate: useCallback((state: MCPServersState) => {
       setMcpState(state);
-    }, []),
-    onMessage: useCallback(
-      (message: MessageEvent) => {
-        try {
-          const data = JSON.parse(String(message.data));
-          if (data.type === "scheduled-task") {
-            toasts.add({
-              title: "Scheduled task completed",
-              description: data.description,
-              timeout: 0
-            });
-          }
-        } catch {
-          // Not JSON or not our event
-        }
-      },
-      [toasts]
-    )
+    }, [])
   });
 
   const {
@@ -91,24 +72,7 @@ export function ChatPage() {
     addToolApprovalResponse,
     stop,
     status
-  } = useAgentChat({
-    agent,
-    experimental_throttle: 100,
-    onToolCall: async (event) => {
-      if (
-        "addToolOutput" in event &&
-        event.toolCall.toolName === "getUserTimezone"
-      ) {
-        event.addToolOutput({
-          toolCallId: event.toolCall.toolCallId,
-          output: {
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            localTime: new Date().toLocaleTimeString()
-          }
-        });
-      }
-    }
-  });
+  } = useAgentChat({ agent, experimental_throttle: 100 });
 
   const isStreaming = status === "streaming" || status === "submitted";
 
@@ -264,12 +228,6 @@ export function ChatPage() {
         messages={messages}
         showDebug={showDebug}
         isStreaming={isStreaming}
-        onSuggestedPrompt={(prompt) =>
-          sendMessage({
-            role: "user",
-            parts: [{ type: "text", text: prompt }]
-          })
-        }
         addToolApprovalResponse={addToolApprovalResponse}
         saveNote={saveNote}
         endRef={messagesEndRef}

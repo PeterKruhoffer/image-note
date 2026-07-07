@@ -1,12 +1,13 @@
 {
-  "name": "agent-starter",
+  "name": "image-mind",
   "version": "1.0.0",
   "private": true,
-  "description": "Starter template for building AI chat agents on Cloudflare",
+  "description": "Turn screenshots into concise notes with Cloudflare Workers AI",
   "keywords": [
     "agents",
-    "ai",
-    "cloudflare"
+    "cloudflare",
+    "notes",
+    "vision"
   ],
   "license": "MIT",
   "type": "module",

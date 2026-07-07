@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const httpUrlSchema = z.url({ protocol: /^https?$/ }).max(2_048);
+
+export const noteIdSchema = z.uuidv4();
+
 export const noteKindSchema = z.enum([
   "tweet",
   "article",
@@ -31,7 +35,7 @@ export const noteCandidateSchema = z.object({
     .min(1)
     .max(180)
     .describe("One brief sentence stating only the actionable takeaway."),
-  sourceUrl: z.url().max(2_048).nullable(),
+  sourceUrl: httpUrlSchema.nullable(),
   publishedAt: z.string().trim().min(1).max(100).nullable(),
   topics: z
     .array(z.string().trim().min(1).max(64))
@@ -48,12 +52,13 @@ export const noteCandidatesOutputSchema = z.object({
 });
 
 export const savedNoteSchema = noteCandidateSchema.extend({
-  id: z.string().min(1),
-  createdAt: z.string().min(1)
+  id: noteIdSchema,
+  createdAt: z.iso.datetime()
 });
 
 export const savedNotesResponseSchema = z.object({
-  notes: z.array(savedNoteSchema)
+  notes: z.array(savedNoteSchema),
+  nextCursor: z.string().max(256).nullable()
 });
 
 export type NoteKind = z.infer<typeof noteKindSchema>;

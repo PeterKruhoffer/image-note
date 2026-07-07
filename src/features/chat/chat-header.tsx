@@ -5,6 +5,7 @@ import {
   BugIcon,
   ChatCircleDotsIcon,
   CircleIcon,
+  ImageIcon,
   TrashIcon
 } from "@phosphor-icons/react";
 import { ThemeToggle } from "../../components/theme-toggle";
@@ -36,11 +37,12 @@ export function ChatHeader({
       <div className="max-w-3xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold text-kumo-default">
-            <span className="mr-2">⛅</span>Agent Starter
+            <ImageIcon size={20} className="mr-2 inline-block" />
+            Image Mind
           </h1>
           <Badge variant="secondary">
             <ChatCircleDotsIcon size={12} weight="bold" className="mr-1" />
-            AI Chat
+            Image notes
           </Badge>
         </div>
         <div className="flex items-center gap-3">

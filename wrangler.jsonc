@@ -5,7 +5,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "image-mind",
-  "main": "src/server.ts",
+  "main": "src/server/worker.ts",
   "compatibility_date": "2026-03-02",
   "compatibility_flags": ["nodejs_compat"],
   "ai": {
@@ -15,7 +15,7 @@
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/chat", "/api/*", "/oauth/*"]
+    "run_worker_first": ["/chat", "/chat/*", "/api/*", "/oauth/*"]
   },
   "durable_objects": {
     "bindings": [
