@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import { z } from "zod";
+import { chatIdSchema, chatTitleSchema, type ChatSummary } from "../chats";
 import {
   noteCandidateSchema,
   noteIdSchema,
@@ -51,6 +52,13 @@ type NoteRow = {
   created_at: string;
 };
 
+type ChatRow = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
 function decodeCursor(value: string): NoteCursor | null {
   try {
     return noteCursorSchema.parse(JSON.parse(atob(value)));
@@ -93,6 +101,15 @@ function rowToNote(row: NoteRow): SavedNote {
   });
 }
 
+function rowToChat(row: ChatRow): ChatSummary {
+  return {
+    id: chatIdSchema.parse(row.id),
+    title: row.title,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 export class NotesStore extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -114,6 +131,17 @@ export class NotesStore extends DurableObject<Env> {
       `);
       this.ctx.storage.sql.exec(
         "CREATE INDEX IF NOT EXISTS saved_notes_created_at_id ON saved_notes(created_at DESC, id DESC)"
+      );
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS chats (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      `);
+      this.ctx.storage.sql.exec(
+        "CREATE INDEX IF NOT EXISTS chats_updated_at ON chats(updated_at DESC)"
       );
     });
   }
@@ -194,5 +222,126 @@ export class NotesStore extends DurableObject<Env> {
       id
     );
     return cursor.rowsWritten > 0;
+  }
+
+  listChats(): ChatSummary[] {
+    let rows = this.ctx.storage.sql
+      .exec<ChatRow>("SELECT * FROM chats ORDER BY updated_at DESC")
+      .toArray();
+
+    // The original app used one agent named after the user. Keeping that
+    // instance as the first chat preserves existing conversation history.
+    if (rows.length === 0) {
+      const now = new Date().toISOString();
+      this.ctx.storage.sql.exec(
+        "INSERT INTO chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        "legacy",
+        "New chat",
+        now,
+        now
+      );
+      rows = [
+        { id: "legacy", title: "New chat", created_at: now, updated_at: now }
+      ];
+    }
+
+    return rows.map(rowToChat);
+  }
+
+  createChat(): ChatSummary {
+    const now = new Date().toISOString();
+    const chat: ChatSummary = {
+      id: crypto.randomUUID(),
+      title: "New chat",
+      createdAt: now,
+      updatedAt: now
+    };
+    this.ctx.storage.sql.exec(
+      "INSERT INTO chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+      chat.id,
+      chat.title,
+      chat.createdAt,
+      chat.updatedAt
+    );
+    return chat;
+  }
+
+  deleteChat(input: unknown): {
+    deleted: boolean;
+    replacement: ChatSummary | null;
+  } {
+    const id = chatIdSchema.parse(input);
+    let replacement: ChatSummary | null = null;
+
+    const deleted = this.ctx.storage.transactionSync(() => {
+      const cursor = this.ctx.storage.sql.exec(
+        "DELETE FROM chats WHERE id = ?",
+        id
+      );
+      if (cursor.rowsWritten === 0) return false;
+
+      const count =
+        this.ctx.storage.sql
+          .exec<{ count: number }>("SELECT COUNT(*) AS count FROM chats")
+          .toArray()[0]?.count ?? 0;
+      if (count === 0) {
+        const now = new Date().toISOString();
+        replacement = {
+          id: crypto.randomUUID(),
+          title: "New chat",
+          createdAt: now,
+          updatedAt: now
+        };
+        this.ctx.storage.sql.exec(
+          "INSERT INTO chats (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+          replacement.id,
+          replacement.title,
+          replacement.createdAt,
+          replacement.updatedAt
+        );
+      }
+      return true;
+    });
+
+    return { deleted, replacement };
+  }
+
+  hasChat(input: unknown): boolean {
+    const id = chatIdSchema.parse(input);
+    return (
+      this.ctx.storage.sql
+        .exec<{ found: number }>(
+          "SELECT 1 AS found FROM chats WHERE id = ? LIMIT 1",
+          id
+        )
+        .toArray().length > 0
+    );
+  }
+
+  touchChat(input: unknown, suggestedTitle?: unknown): ChatSummary | null {
+    const id = chatIdSchema.parse(input);
+    const title = chatTitleSchema.optional().parse(suggestedTitle);
+    const now = new Date().toISOString();
+    const cursor = title
+      ? this.ctx.storage.sql.exec(
+          `UPDATE chats
+           SET title = CASE WHEN title = 'New chat' THEN ? ELSE title END,
+               updated_at = ?
+           WHERE id = ?`,
+          title,
+          now,
+          id
+        )
+      : this.ctx.storage.sql.exec(
+          "UPDATE chats SET updated_at = ? WHERE id = ?",
+          now,
+          id
+        );
+    if (cursor.rowsWritten === 0) return null;
+
+    const row = this.ctx.storage.sql
+      .exec<ChatRow>("SELECT * FROM chats WHERE id = ? LIMIT 1", id)
+      .toArray()[0];
+    return row ? rowToChat(row) : null;
   }
 }

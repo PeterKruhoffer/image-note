@@ -1,5 +1,9 @@
 Use pnpm as the package manager
 
+If work can be parallelized use subagents
+
+When doing React use React 19 aka concurrent React approach.
+
 # Cloudflare Workers
 
 STOP. Your knowledge of Cloudflare Workers APIs and limits may be outdated. Always retrieve current documentation before any Workers, KV, R2, D1, Durable Objects, Queues, Vectorize, AI, or Agents SDK task.

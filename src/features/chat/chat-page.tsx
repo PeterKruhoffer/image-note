@@ -10,6 +10,7 @@ import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { ImageIcon } from "@phosphor-icons/react";
 import { useAgent } from "agents/react";
 import type { MCPServersState } from "agents";
+import type { ChatSummary } from "../../chats";
 import type { NoteCandidate } from "../../notes";
 import { savedNoteSchema } from "../../notes";
 import type { ChatAgent } from "../../server/chat-agent";
@@ -21,9 +22,151 @@ import {
 } from "./attachments";
 import { ChatComposer } from "./chat-composer";
 import { ChatHeader } from "./chat-header";
+import { ChatSidebar } from "./chat-sidebar";
 import { MessageList } from "./message-list";
+import { useChatHistory } from "./use-chat-history";
+
+async function prepareChatAgentConnection() {
+  await ensureAnonymousSession();
+  return {};
+}
 
 export function ChatPage() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const {
+    chats,
+    activeChat,
+    activeChatId,
+    loading,
+    creating,
+    deletingChatId,
+    error,
+    loadChats,
+    selectChat,
+    createChat,
+    deleteChat,
+    recordActivity
+  } = useChatHistory();
+
+  const handleSelectChat = useCallback(
+    (chat: ChatSummary) => {
+      selectChat(chat);
+      setSidebarOpen(false);
+    },
+    [selectChat]
+  );
+
+  const handleCreateChat = useCallback(async () => {
+    if (await createChat()) setSidebarOpen(false);
+  }, [createChat]);
+
+  const handleDeleteChat = useCallback(
+    async (chat: ChatSummary) => {
+      if (!window.confirm(`Delete “${chat.title}”? This can’t be undone.`)) {
+        return;
+      }
+      const deletingActiveChat = activeChatId === chat.id;
+      if ((await deleteChat(chat)) && deletingActiveChat) {
+        setSidebarOpen(false);
+      }
+    },
+    [activeChatId, deleteChat]
+  );
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-kumo-elevated text-kumo-inactive">
+        Loading chats…
+      </div>
+    );
+  }
+
+  if (error && !activeChatId) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-kumo-elevated px-5 text-center">
+        <p role="alert" className="text-sm text-kumo-danger">
+          {error}
+        </p>
+        <button
+          type="button"
+          className="rounded-lg bg-kumo-base px-4 py-2 text-sm text-kumo-default ring ring-kumo-line"
+          onClick={() => void loadChats()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!activeChat) return null;
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-kumo-elevated">
+      {error && (
+        <div
+          role="alert"
+          className="fixed left-1/2 top-3 z-[80] -translate-x-1/2 rounded-lg bg-kumo-base px-4 py-2 text-sm text-kumo-danger shadow-lg ring ring-kumo-danger/30"
+        >
+          {error}
+        </div>
+      )}
+      <div className="hidden md:block">
+        <ChatSidebar
+          chats={chats}
+          activeChatId={activeChat.id}
+          creating={creating}
+          deletingChatId={deletingChatId}
+          onSelect={handleSelectChat}
+          onCreate={() => void handleCreateChat()}
+          onDelete={(chat) => void handleDeleteChat(chat)}
+        />
+      </div>
+
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-[60] flex md:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close chat history"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="relative h-full shadow-xl">
+            <ChatSidebar
+              mobile
+              chats={chats}
+              activeChatId={activeChat.id}
+              creating={creating}
+              deletingChatId={deletingChatId}
+              onSelect={handleSelectChat}
+              onCreate={() => void handleCreateChat()}
+              onDelete={(chat) => void handleDeleteChat(chat)}
+              onClose={() => setSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      <ChatConversation
+        key={activeChat.id}
+        chatId={activeChat.id}
+        onOpenSidebar={() => setSidebarOpen(true)}
+        onActivity={recordActivity}
+      />
+    </div>
+  );
+}
+
+interface ChatConversationProps {
+  chatId: string;
+  onOpenSidebar: () => void;
+  onActivity: (chatId: string, title: string) => void;
+}
+
+function ChatConversation({
+  chatId,
+  onOpenSidebar,
+  onActivity
+}: ChatConversationProps) {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState("");
   const [showDebug, setShowDebug] = useState(false);
@@ -49,11 +192,9 @@ export function ChatPage() {
 
   const agent = useAgent<ChatAgent>({
     agent: "ChatAgent",
-    basePath: "chat",
-    query: async () => {
-      await ensureAnonymousSession();
-      return {};
-    },
+    name: chatId,
+    basePath: `chat/${encodeURIComponent(chatId)}`,
+    query: prepareChatAgentConnection,
     onOpen: useCallback(() => setConnected(true), []),
     onClose: useCallback(() => setConnected(false), []),
     onError: useCallback(
@@ -178,9 +319,29 @@ export function ChatPage() {
     }
     setAttachments([]);
 
+    const normalizedTitle = text.replace(/\s+/g, " ");
+    const title = normalizedTitle
+      ? normalizedTitle.length > 60
+        ? `${normalizedTitle.slice(0, 57).trimEnd()}…`
+        : normalizedTitle
+      : "Image chat";
+    onActivity(chatId, title);
+    try {
+      const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title })
+      });
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+      }
+    } catch (cause) {
+      console.error("Failed to update chat history:", cause);
+    }
     sendMessage({ role: "user", parts });
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, attachments, isStreaming, sendMessage]);
+  }, [input, attachments, isStreaming, sendMessage, onActivity, chatId]);
 
   const addMcpServer = useCallback(
     async (name: string, url: string) => {
@@ -198,7 +359,7 @@ export function ChatPage() {
 
   return (
     <div
-      className="flex flex-col h-screen bg-kumo-elevated relative"
+      className="relative flex h-screen min-w-0 flex-1 flex-col bg-kumo-elevated"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -215,6 +376,7 @@ export function ChatPage() {
       )}
 
       <ChatHeader
+        onOpenSidebar={onOpenSidebar}
         connected={connected}
         showDebug={showDebug}
         onShowDebugChange={setShowDebug}
