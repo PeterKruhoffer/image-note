@@ -5,7 +5,6 @@ import {
   deleteChatResponseSchema,
   type ChatSummary
 } from "../../chats";
-import { ensureAnonymousSession } from "../../lib/anonymous-session";
 
 type ChatHistoryState = {
   chats: ChatSummary[];
@@ -152,9 +151,6 @@ export function useChatHistory() {
     dispatch({ type: "loadStarted" });
 
     try {
-      await ensureAnonymousSession();
-      if (controller.signal.aborted) return;
-
       const response = await fetch("/api/chats", {
         credentials: "same-origin",
         headers: { accept: "application/json" },

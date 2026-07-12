@@ -8,6 +8,9 @@
   "main": "src/server/worker.ts",
   "compatibility_date": "2026-03-02",
   "compatibility_flags": ["nodejs_compat"],
+  "secrets": {
+    "required": ["CLERK_PUBLISHABLE_KEY", "CLERK_SECRET_KEY"]
+  },
   "ai": {
     "binding": "AI",
     "remote": true

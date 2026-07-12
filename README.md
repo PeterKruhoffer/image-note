@@ -7,15 +7,17 @@ the user chooses which one to keep.
 ## Development
 
 ```bash
-npm install
-npm run dev
+pnpm install
+cp .env.example .env.local
+cp .dev.vars.example .dev.vars
+pnpm dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173). Before deploying, run:
 
 ```bash
-npm run check
-npm run deploy
+pnpm check
+pnpm deploy
 ```
 
 ## Architecture
@@ -25,7 +27,8 @@ npm run deploy
 - `src/server/notes-store.ts` stores paginated notes in a SQLite-backed Durable
   Object.
 - `src/server/worker.ts` owns authenticated routing and API responses.
-- `src/server/session.ts` owns the temporary anonymous-session boundary.
+- `src/server/auth.ts` verifies Clerk sessions and produces the stable user
+  identity used to address Durable Objects.
 - `src/notes.ts` contains shared Zod schemas and TypeScript types.
 
 The original screenshot is kept in chat history but is not copied into a saved
@@ -33,13 +36,25 @@ note row.
 
 ## Authentication boundary
 
-This project currently uses an anonymous UUID in an HttpOnly, SameSite cookie.
-The Worker maps that subject to both the user's `ChatAgent` and `NotesStore`.
-This is suitable for local development, not production authentication: there is
-no account recovery, cross-device identity, or cryptographic cookie signature.
+The React app requires a Clerk session before rendering chat or the library.
+The Worker independently verifies every API, WebSocket, and MCP OAuth callback
+request, then maps the verified Clerk user ID to that user's `NotesStore` and
+chat agents. Client-provided user IDs are never trusted.
 
-Before production deployment, replace the anonymous session with a verified
-authentication subject and add an abuse-control policy in front of Workers AI.
+For local development, put the Clerk publishable key in `.env.local` and both
+the publishable and secret keys in `.dev.vars`, using the included examples.
+Never commit either local file.
+
+Before deploying, expose `VITE_CLERK_PUBLISHABLE_KEY` to the Vite build and add
+the Worker credentials with Wrangler:
+
+```bash
+pnpm wrangler secret put CLERK_PUBLISHABLE_KEY
+pnpm wrangler secret put CLERK_SECRET_KEY
+```
+
+Existing notes created under anonymous development sessions are not migrated
+to Clerk accounts automatically.
 
 ## Cloudflare configuration
 

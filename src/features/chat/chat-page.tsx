@@ -14,7 +14,6 @@ import type { ChatSummary } from "../../chats";
 import type { NoteCandidate } from "../../notes";
 import { savedNoteSchema } from "../../notes";
 import type { ChatAgent } from "../../server/chat-agent";
-import { ensureAnonymousSession } from "../../lib/anonymous-session";
 import {
   createAttachment,
   fileToDataUri,
@@ -25,11 +24,6 @@ import { ChatHeader } from "./chat-header";
 import { ChatSidebar } from "./chat-sidebar";
 import { MessageList } from "./message-list";
 import { useChatHistory } from "./use-chat-history";
-
-async function prepareChatAgentConnection() {
-  await ensureAnonymousSession();
-  return {};
-}
 
 export function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -194,7 +188,6 @@ function ChatConversation({
     agent: "ChatAgent",
     name: chatId,
     basePath: `chat/${encodeURIComponent(chatId)}`,
-    query: prepareChatAgentConnection,
     onOpen: useCallback(() => setConnected(true), []),
     onClose: useCallback(() => setConnected(false), []),
     onError: useCallback(

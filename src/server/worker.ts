@@ -3,7 +3,7 @@ import { chatIdSchema, chatTitleSchema } from "../chats";
 import { noteIdSchema } from "../notes";
 import { ChatAgent } from "./chat-agent";
 import { NotesStore, parseNotesListInput } from "./notes-store";
-import { anonymousCookie, anonymousSubject } from "./session";
+import { authenticatedSubject } from "./auth";
 
 export { ChatAgent, NotesStore };
 
@@ -34,19 +34,7 @@ function chatAgentName(subject: string, chatId: string) {
 export default {
   async fetch(request: Request, env: Env) {
     const url = new URL(request.url);
-
-    if (url.pathname === "/api/session" && request.method === "POST") {
-      const existingSubject = anonymousSubject(request);
-      if (existingSubject) return Response.json({ ready: true });
-
-      const id = crypto.randomUUID();
-      return Response.json(
-        { ready: true },
-        { headers: { "set-cookie": anonymousCookie(id, request) } }
-      );
-    }
-
-    const subject = anonymousSubject(request);
+    const subject = await authenticatedSubject(request, env);
     const chatConnectionMatch = url.pathname.match(
       /^\/chat\/([^/]+)(?:\/.*)?$/
     );

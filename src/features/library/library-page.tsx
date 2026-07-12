@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { UserButton } from "@clerk/react";
 import { Button, Empty, LayerCard, Text } from "@cloudflare/kumo";
 import {
   BookmarkSimpleIcon,
@@ -6,7 +7,6 @@ import {
   ChatCircleDotsIcon
 } from "@phosphor-icons/react";
 import { ThemeToggle } from "../../components/theme-toggle";
-import { ensureAnonymousSession } from "../../lib/anonymous-session";
 import { savedNotesResponseSchema, type SavedNote } from "../../notes";
 import { NoteCard } from "./note-card";
 
@@ -22,7 +22,6 @@ export function LibraryPage() {
     setLoading(true);
     setError(null);
     try {
-      await ensureAnonymousSession();
       const response = await fetch("/api/notes", {
         credentials: "same-origin",
         headers: { accept: "application/json" }
@@ -102,6 +101,7 @@ export function LibraryPage() {
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <UserButton />
             <Button
               variant="primary"
               icon={<ChatCircleDotsIcon size={16} />}

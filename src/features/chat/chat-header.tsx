@@ -1,4 +1,5 @@
 import type { MCPServersState } from "agents";
+import { UserButton } from "@clerk/react";
 import { Badge, Button, Switch, Text } from "@cloudflare/kumo";
 import {
   BooksIcon,
@@ -77,6 +78,7 @@ export function ChatHeader({
             />
           </div>
           <ThemeToggle />
+          <UserButton />
           <Button
             variant="secondary"
             icon={<BooksIcon size={16} />}
