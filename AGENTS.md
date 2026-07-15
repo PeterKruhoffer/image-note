@@ -1,7 +1,5 @@
 Use pnpm as the package manager
 
-If work can be parallelized use subagents - use gpt-5.6 terra for your subagents
-
 When doing React use React 19 aka concurrent React approach.
 
 # Cloudflare Workers
