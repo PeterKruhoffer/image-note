@@ -1,8 +1,8 @@
 # Image Mind
 
-Image Mind turns screenshots into concise saved notes. Attach, paste, or drop an
-image in chat; the vision model returns exactly three validated candidates and
-the user chooses which one to keep.
+Image Mind turns screenshots into concise saved notes. Attach, paste, or drop up
+to four images in chat; the vision model returns three validated candidates for
+each image and the user chooses which ones to keep.
 
 ## Development
 
@@ -31,8 +31,9 @@ pnpm deploy
   identity used to address Durable Objects.
 - `src/notes.ts` contains shared Zod schemas and TypeScript types.
 
-The original screenshot is kept in chat history but is not copied into a saved
-note row.
+Uploaded screenshot data is kept in chat history, with oversized images
+compressed to fit the message budget. Images are not copied into saved note
+rows.
 
 ## Authentication boundary
 

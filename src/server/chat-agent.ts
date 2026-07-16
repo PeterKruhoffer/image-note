@@ -2,12 +2,15 @@ import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
 import { callable, MCP_SERVER_ID_MAX_LENGTH } from "agents";
 import {
   convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   pruneMessages,
   stepCountIs,
   streamText
 } from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
+import { MAX_IMAGES_PER_MESSAGE } from "../image-limits";
 import { httpUrlSchema } from "../notes";
 import { IMAGE_NOTE_SYSTEM_PROMPT } from "./chat-prompt";
 import { createChatTools } from "./chat-tools";
@@ -107,14 +110,35 @@ export class ChatAgent extends AIChatAgent<Env> {
       const chats = this.env.NotesStore.getByName(ownerId);
       await chats.touchChat(chatId, suggestedChatTitle(latestMessage));
     }
-    const hasImage =
-      latestMessage?.role === "user" &&
-      latestMessage.parts.some(
-        (part) =>
-          part.type === "file" &&
-          typeof part.mediaType === "string" &&
-          part.mediaType.startsWith("image/")
-      );
+    const imageCount =
+      latestMessage?.role === "user"
+        ? latestMessage.parts.filter(
+            (part) =>
+              part.type === "file" &&
+              typeof part.mediaType === "string" &&
+              part.mediaType.startsWith("image/")
+          ).length
+        : 0;
+
+    if (imageCount > MAX_IMAGES_PER_MESSAGE) {
+      const textId = crypto.randomUUID();
+      return createUIMessageStreamResponse({
+        stream: createUIMessageStream({
+          execute: ({ writer }) => {
+            writer.write({ type: "text-start", id: textId });
+            writer.write({
+              type: "text-delta",
+              id: textId,
+              delta: `Please attach no more than ${MAX_IMAGES_PER_MESSAGE} images at a time.`
+            });
+            writer.write({ type: "text-end", id: textId });
+          }
+        })
+      });
+    }
+
+    const imageTool =
+      imageCount > 1 ? "createNoteCandidateBatch" : "createNoteCandidates";
 
     const result = streamText({
       model: workersai("@cf/moonshotai/kimi-k2.6", {
@@ -126,10 +150,9 @@ export class ChatAgent extends AIChatAgent<Env> {
         toolCalls: "before-last-2-messages"
       }),
       tools: createChatTools(this.mcp.getAITools()),
-      toolChoice: hasImage
-        ? { type: "tool", toolName: "createNoteCandidates" }
-        : "auto",
-      stopWhen: stepCountIs(hasImage ? 1 : 5),
+      toolChoice:
+        imageCount > 0 ? { type: "tool", toolName: imageTool } : "auto",
+      stopWhen: stepCountIs(imageCount > 0 ? 1 : 5),
       abortSignal: options?.abortSignal
     });
 

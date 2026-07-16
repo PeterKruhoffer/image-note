@@ -32,8 +32,8 @@ export function MessageList({
             title="Turn a screenshot into a note"
             contents={
               <Text size="sm" variant="secondary">
-                Paste, drop, or attach an image to create three concise note
-                candidates.
+                Paste, drop, or attach up to four images. Each image gets three
+                concise note candidates.
               </Text>
             }
           />

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_IMAGES_PER_MESSAGE } from "./image-limits";
 
 export const httpUrlSchema = z.url({ protocol: /^https?$/ }).max(2_048);
 
@@ -49,6 +50,28 @@ export const noteCandidatesSchema = z.array(noteCandidateSchema).length(3);
 
 export const noteCandidatesOutputSchema = z.object({
   candidates: noteCandidatesSchema
+});
+
+export const noteCandidateBatchItemSchema = z.object({
+  imageIndex: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_IMAGES_PER_MESSAGE)
+    .describe("The image's one-based position in the latest user message."),
+  candidates: noteCandidatesSchema
+});
+
+export const noteCandidateBatchOutputSchema = z.object({
+  images: z
+    .array(noteCandidateBatchItemSchema)
+    .min(2)
+    .max(MAX_IMAGES_PER_MESSAGE)
+    .refine(
+      (images) =>
+        images.every((image, index) => image.imageIndex === index + 1),
+      "Images must appear once each in attachment order."
+    )
 });
 
 export const savedNoteSchema = noteCandidateSchema.extend({

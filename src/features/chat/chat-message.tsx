@@ -26,6 +26,11 @@ export function ChatMessage({
   saveNote
 }: ChatMessageProps) {
   const isUser = message.role === "user";
+  const imageParts = message.parts.filter(
+    (part): part is Extract<typeof part, { type: "file" }> =>
+      part.type === "file" &&
+      (part as { mediaType?: string }).mediaType?.startsWith("image/") === true
+  );
 
   return (
     <div className="space-y-2">
@@ -83,25 +88,27 @@ export function ChatMessage({
           );
         })}
 
-      {message.parts
-        .filter(
-          (part): part is Extract<typeof part, { type: "file" }> =>
-            part.type === "file" &&
-            (part as { mediaType?: string }).mediaType?.startsWith("image/") ===
-              true
-        )
-        .map((part, index) => (
-          <div
-            key={`file-${index}`}
-            className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-          >
+      {imageParts.map((part, index) => (
+        <div
+          key={`file-${index}`}
+          className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+        >
+          <div className="relative">
             <img
               src={part.url}
-              alt="Attachment"
+              alt={
+                imageParts.length > 1 ? `Attachment ${index + 1}` : "Attachment"
+              }
               className="max-h-64 rounded-xl border border-kumo-line object-contain"
             />
+            {imageParts.length > 1 && (
+              <span className="absolute left-2 top-2 rounded-md bg-kumo-contrast/85 px-2 py-1 text-xs font-medium text-kumo-inverse shadow-sm">
+                Image {index + 1}
+              </span>
+            )}
           </div>
-        ))}
+        </div>
+      ))}
 
       {message.parts
         .filter((part) => part.type === "text")

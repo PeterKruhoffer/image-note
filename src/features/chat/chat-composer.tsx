@@ -6,14 +6,17 @@ import {
   StopIcon,
   XIcon
 } from "@phosphor-icons/react";
-import type { Attachment } from "./attachments";
+import { MAX_IMAGES_PER_MESSAGE } from "../../image-limits";
+import { IMAGE_INPUT_ACCEPT, type Attachment } from "./attachments";
 
 interface ChatComposerProps {
   input: string;
   onInputChange: (value: string) => void;
   attachments: Attachment[];
+  attachmentError: string | null;
   connected: boolean;
   isStreaming: boolean;
+  isPreparingAttachments: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onAddFiles: (files: FileList | File[]) => void;
@@ -23,12 +26,23 @@ interface ChatComposerProps {
   onStop: () => void;
 }
 
+function getComposerPlaceholder(
+  isPreparingAttachments: boolean,
+  hasAttachments: boolean
+) {
+  if (isPreparingAttachments) return "Preparing images...";
+  if (hasAttachments) return "Add a message or send images...";
+  return "Send a message...";
+}
+
 export function ChatComposer({
   input,
   onInputChange,
   attachments,
+  attachmentError,
   connected,
   isStreaming,
+  isPreparingAttachments,
   textareaRef,
   fileInputRef,
   onAddFiles,
@@ -50,7 +64,7 @@ export function ChatComposer({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept={IMAGE_INPUT_ACCEPT}
           aria-label="Upload image attachments"
           className="hidden"
           onChange={(event) => {
@@ -60,28 +74,44 @@ export function ChatComposer({
         />
 
         {attachments.length > 0 && (
-          <div className="flex gap-2 mb-2 flex-wrap">
-            {attachments.map((attachment) => (
-              <div
-                key={attachment.id}
-                className="relative group rounded-lg border border-kumo-line bg-kumo-control overflow-hidden"
-              >
-                <img
-                  src={attachment.preview}
-                  alt={attachment.file.name}
-                  className="h-16 w-16 object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => onRemoveAttachment(attachment.id)}
-                  className="absolute top-0.5 right-0.5 rounded-full bg-kumo-contrast/80 text-kumo-inverse p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                  aria-label={`Remove ${attachment.file.name}`}
+          <div className="mb-2">
+            <div className="mb-1.5 text-xs text-kumo-subtle">
+              {attachments.length} of {MAX_IMAGES_PER_MESSAGE} images
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {attachments.map((attachment, index) => (
+                <div
+                  key={attachment.id}
+                  className="relative group rounded-lg border border-kumo-line bg-kumo-control overflow-hidden"
                 >
-                  <XIcon size={10} />
-                </button>
-              </div>
-            ))}
+                  <img
+                    src={attachment.preview}
+                    alt={attachment.file.name}
+                    className="h-16 w-16 object-cover"
+                  />
+                  {attachments.length > 1 && (
+                    <span className="absolute bottom-1 left-1 rounded bg-kumo-contrast/80 px-1.5 py-0.5 text-[10px] font-medium text-kumo-inverse">
+                      {index + 1}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveAttachment(attachment.id)}
+                    className="absolute top-0.5 right-0.5 rounded-full bg-kumo-contrast/80 text-kumo-inverse p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    aria-label={`Remove ${attachment.file.name}`}
+                  >
+                    <XIcon size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
+        )}
+
+        {attachmentError && (
+          <p role="alert" className="mb-2 text-sm text-kumo-danger">
+            {attachmentError}
+          </p>
         )}
 
         <div className="flex items-end gap-3 rounded-xl border border-kumo-line bg-kumo-base p-3 shadow-sm focus-within:ring-2 focus-within:ring-kumo-ring focus-within:border-transparent transition-shadow">
@@ -92,7 +122,7 @@ export function ChatComposer({
             aria-label="Attach images"
             icon={<PaperclipIcon size={18} />}
             onClick={() => fileInputRef.current?.click()}
-            disabled={!connected || isStreaming}
+            disabled={!connected || isStreaming || isPreparingAttachments}
             className="mb-0.5"
           />
           <InputArea
@@ -111,12 +141,11 @@ export function ChatComposer({
               element.style.height = `${element.scrollHeight}px`;
             }}
             onPaste={onPaste}
-            placeholder={
+            placeholder={getComposerPlaceholder(
+              isPreparingAttachments,
               attachments.length > 0
-                ? "Add a message or send images..."
-                : "Send a message..."
-            }
-            disabled={!connected || isStreaming}
+            )}
+            disabled={!connected || isStreaming || isPreparingAttachments}
             rows={1}
             className="flex-1 ring-0! focus:ring-0! shadow-none! bg-transparent! outline-none! resize-none max-h-40"
           />
@@ -137,7 +166,9 @@ export function ChatComposer({
               shape="square"
               aria-label="Send message"
               disabled={
-                (!input.trim() && attachments.length === 0) || !connected
+                (!input.trim() && attachments.length === 0) ||
+                !connected ||
+                isPreparingAttachments
               }
               icon={<PaperPlaneRightIcon size={18} />}
               className="mb-0.5"

@@ -11,12 +11,17 @@ import { ImageIcon } from "@phosphor-icons/react";
 import { useAgent } from "agents/react";
 import type { MCPServersState } from "agents";
 import type { ChatSummary } from "../../chats";
+import {
+  MAX_IMAGE_BYTES_PER_MESSAGE,
+  MAX_IMAGES_PER_MESSAGE
+} from "../../image-limits";
 import type { NoteCandidate } from "../../notes";
 import { savedNoteSchema } from "../../notes";
 import type { ChatAgent } from "../../server/chat-agent";
 import {
   createAttachment,
-  fileToDataUri,
+  isSupportedImage,
+  prepareImage,
   type Attachment
 } from "./attachments";
 import { ChatComposer } from "./chat-composer";
@@ -165,6 +170,8 @@ function ChatConversation({
   const [input, setInput] = useState("");
   const [showDebug, setShowDebug] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -228,15 +235,35 @@ function ChatConversation({
     }
   }, [isStreaming]);
 
-  const addFiles = useCallback((files: FileList | File[]) => {
-    const images = Array.from(files).filter((file) =>
-      file.type.startsWith("image/")
-    );
-    if (images.length === 0) return;
-    setAttachments((current) => [...current, ...images.map(createAttachment)]);
-  }, []);
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      if (isStreaming || isPreparingAttachments) return;
+
+      const images = Array.from(files).filter(isSupportedImage);
+      if (images.length === 0) {
+        setAttachmentError("Attach a PNG, JPEG, or WebP image.");
+        return;
+      }
+
+      const available = MAX_IMAGES_PER_MESSAGE - attachments.length;
+      const accepted = images.slice(0, Math.max(0, available));
+      if (accepted.length > 0) {
+        setAttachments((current) => [
+          ...current,
+          ...accepted.map(createAttachment)
+        ]);
+      }
+      setAttachmentError(
+        accepted.length < images.length
+          ? `You can attach up to ${MAX_IMAGES_PER_MESSAGE} images at a time.`
+          : null
+      );
+    },
+    [attachments.length, isPreparingAttachments, isStreaming]
+  );
 
   const removeAttachment = useCallback((id: string) => {
+    setAttachmentError(null);
     setAttachments((current) => {
       const attachment = current.find((item) => item.id === id);
       if (attachment) URL.revokeObjectURL(attachment.preview);
@@ -289,8 +316,12 @@ function ChatConversation({
 
   const send = useCallback(async () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || isStreaming) return;
-    setInput("");
+    if (
+      (!text && attachments.length === 0) ||
+      isStreaming ||
+      isPreparingAttachments
+    )
+      return;
 
     const parts: Array<
       | { type: "text"; text: string }
@@ -298,19 +329,31 @@ function ChatConversation({
     > = [];
     if (text) parts.push({ type: "text", text });
 
-    for (const attachment of attachments) {
-      const dataUri = await fileToDataUri(attachment.file);
-      parts.push({
-        type: "file",
-        mediaType: attachment.mediaType,
-        url: dataUri
-      });
+    setAttachmentError(null);
+    setIsPreparingAttachments(attachments.length > 0);
+    try {
+      const imageBudget = Math.floor(
+        MAX_IMAGE_BYTES_PER_MESSAGE / Math.max(1, attachments.length)
+      );
+      for (const attachment of attachments) {
+        const image = await prepareImage(attachment.file, imageBudget);
+        parts.push({ type: "file", ...image });
+      }
+    } catch (cause) {
+      console.error("Failed to prepare image attachments:", cause);
+      setAttachmentError(
+        "One of the images couldn’t be prepared. Try a smaller PNG, JPEG, or WebP image."
+      );
+      setIsPreparingAttachments(false);
+      return;
     }
 
+    setInput("");
     for (const attachment of attachments) {
       URL.revokeObjectURL(attachment.preview);
     }
     setAttachments([]);
+    setIsPreparingAttachments(false);
 
     const normalizedTitle = text.replace(/\s+/g, " ");
     const title = normalizedTitle
@@ -334,7 +377,15 @@ function ChatConversation({
     }
     sendMessage({ role: "user", parts });
     if (textareaRef.current) textareaRef.current.style.height = "auto";
-  }, [input, attachments, isStreaming, sendMessage, onActivity, chatId]);
+  }, [
+    input,
+    attachments,
+    isStreaming,
+    isPreparingAttachments,
+    sendMessage,
+    onActivity,
+    chatId
+  ]);
 
   const addMcpServer = useCallback(
     async (name: string, url: string) => {
@@ -391,8 +442,10 @@ function ChatConversation({
         input={input}
         onInputChange={setInput}
         attachments={attachments}
+        attachmentError={attachmentError}
         connected={connected}
         isStreaming={isStreaming}
+        isPreparingAttachments={isPreparingAttachments}
         textareaRef={textareaRef}
         fileInputRef={fileInputRef}
         onAddFiles={addFiles}

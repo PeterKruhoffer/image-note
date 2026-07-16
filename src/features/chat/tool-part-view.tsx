@@ -5,8 +5,17 @@ import {
   ImageIcon,
   XCircleIcon
 } from "@phosphor-icons/react";
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
-import { noteCandidatesOutputSchema } from "../../notes";
+import {
+  getToolName,
+  isToolUIPart,
+  type DynamicToolUIPart,
+  type ToolUIPart,
+  type UIMessage
+} from "ai";
+import {
+  noteCandidateBatchOutputSchema,
+  noteCandidatesOutputSchema
+} from "../../notes";
 import { NoteCandidatePicker, type SaveNote } from "./note-candidate-picker";
 
 export type ToolApprovalResponseHandler = (response: {
@@ -20,6 +29,153 @@ interface ToolPartViewProps {
   saveNote: SaveNote;
 }
 
+type AnyToolUIPart = ToolUIPart | DynamicToolUIPart;
+
+function InvalidImageToolOutput({
+  title,
+  description
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex justify-start">
+      <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring ring-kumo-line">
+        <Text size="sm" bold>
+          {title}
+        </Text>
+        <Text size="xs" variant="secondary">
+          {description}
+        </Text>
+      </LayerCard>
+    </div>
+  );
+}
+
+function ImageToolLoading({ children }: { children: string }) {
+  return (
+    <div className="flex justify-start">
+      <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring ring-kumo-line">
+        <div className="flex items-center gap-2">
+          <ImageIcon size={16} className="text-kumo-accent animate-pulse" />
+          <Text size="sm">{children}</Text>
+        </div>
+      </LayerCard>
+    </div>
+  );
+}
+
+function NoteCandidatesOutput({
+  output,
+  saveNote
+}: {
+  output: unknown;
+  saveNote: SaveNote;
+}) {
+  const parsed = noteCandidatesOutputSchema.safeParse(output);
+  if (!parsed.success) {
+    return (
+      <InvalidImageToolOutput
+        title="Couldn’t display note suggestions"
+        description="The screenshot analysis returned an unexpected format. Please try again."
+      />
+    );
+  }
+
+  return (
+    <NoteCandidatePicker
+      candidates={parsed.data.candidates}
+      saveNote={saveNote}
+    />
+  );
+}
+
+function NoteCandidatesPart({
+  part,
+  saveNote
+}: {
+  part: AnyToolUIPart;
+  saveNote: SaveNote;
+}) {
+  switch (part.state) {
+    case "output-available":
+      return <NoteCandidatesOutput output={part.output} saveNote={saveNote} />;
+    case "input-available":
+    case "input-streaming":
+      return (
+        <ImageToolLoading>Turning your screenshot into notes…</ImageToolLoading>
+      );
+    default:
+      return null;
+  }
+}
+
+function NoteCandidateBatchOutput({
+  output,
+  saveNote
+}: {
+  output: unknown;
+  saveNote: SaveNote;
+}) {
+  const parsed = noteCandidateBatchOutputSchema.safeParse(output);
+  if (!parsed.success) {
+    return (
+      <InvalidImageToolOutput
+        title="Couldn’t display batch suggestions"
+        description="The image analysis returned an unexpected format. Please try again."
+      />
+    );
+  }
+
+  return (
+    <section className="space-y-6" aria-label="Notes from attached images">
+      <div className="flex items-center gap-2">
+        <ImageIcon size={18} className="text-kumo-accent" />
+        <Text size="sm" bold>
+          Notes from {parsed.data.images.length} images
+        </Text>
+        <Badge variant="secondary">Separate results</Badge>
+      </div>
+      {parsed.data.images.map((image) => (
+        <div
+          key={image.imageIndex}
+          className="border-l-2 border-kumo-line pl-4"
+        >
+          <NoteCandidatePicker
+            candidates={image.candidates}
+            saveNote={saveNote}
+            sourceLabel={`Image ${image.imageIndex}`}
+          />
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function NoteCandidateBatchPart({
+  part,
+  saveNote
+}: {
+  part: AnyToolUIPart;
+  saveNote: SaveNote;
+}) {
+  switch (part.state) {
+    case "output-available":
+      return (
+        <NoteCandidateBatchOutput output={part.output} saveNote={saveNote} />
+      );
+    case "input-available":
+    case "input-streaming":
+      return (
+        <ImageToolLoading>
+          Turning your images into separate notes…
+        </ImageToolLoading>
+      );
+    default:
+      return null;
+  }
+}
+
 export function ToolPartView({
   part,
   addToolApprovalResponse,
@@ -29,43 +185,11 @@ export function ToolPartView({
   const toolName = getToolName(part);
 
   if (toolName === "createNoteCandidates") {
-    if (part.state === "output-available") {
-      const parsed = noteCandidatesOutputSchema.safeParse(part.output);
-      if (!parsed.success) {
-        return (
-          <div className="flex justify-start">
-            <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring ring-kumo-line">
-              <Text size="sm" bold>
-                Couldn’t display note suggestions
-              </Text>
-              <Text size="xs" variant="secondary">
-                The screenshot analysis returned an unexpected format. Please
-                try again.
-              </Text>
-            </LayerCard>
-          </div>
-        );
-      }
-      return (
-        <NoteCandidatePicker
-          candidates={parsed.data.candidates}
-          saveNote={saveNote}
-        />
-      );
-    }
+    return <NoteCandidatesPart part={part} saveNote={saveNote} />;
+  }
 
-    if (part.state === "input-available" || part.state === "input-streaming") {
-      return (
-        <div className="flex justify-start">
-          <LayerCard className="max-w-[85%] px-4 py-3 rounded-xl ring ring-kumo-line">
-            <div className="flex items-center gap-2">
-              <ImageIcon size={16} className="text-kumo-accent animate-pulse" />
-              <Text size="sm">Turning your screenshot into notes…</Text>
-            </div>
-          </LayerCard>
-        </div>
-      );
-    }
+  if (toolName === "createNoteCandidateBatch") {
+    return <NoteCandidateBatchPart part={part} saveNote={saveNote} />;
   }
 
   if (part.state === "output-available") {

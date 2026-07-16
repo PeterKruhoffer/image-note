@@ -8,11 +8,13 @@ export type SaveNote = (candidate: NoteCandidate) => Promise<SavedNote>;
 interface NoteCandidatePickerProps {
   candidates: NoteCandidate[];
   saveNote: SaveNote;
+  sourceLabel?: string;
 }
 
 export function NoteCandidatePicker({
   candidates,
-  saveNote
+  saveNote,
+  sourceLabel
 }: NoteCandidatePickerProps) {
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [savedIndex, setSavedIndex] = useState<number | null>(null);
@@ -34,11 +36,18 @@ export function NoteCandidatePicker({
   };
 
   return (
-    <section className="space-y-3" aria-label="Suggested notes">
+    <section
+      className="space-y-3"
+      aria-label={
+        sourceLabel ? `Suggested notes for ${sourceLabel}` : "Suggested notes"
+      }
+    >
       <div className="flex items-center gap-2">
         <BookmarkSimpleIcon size={18} className="text-kumo-accent" />
         <Text size="sm" bold>
-          Choose one note to save
+          {sourceLabel
+            ? `${sourceLabel}: choose one note`
+            : "Choose one note to save"}
         </Text>
         <Badge variant="secondary">3 suggestions</Badge>
       </div>
