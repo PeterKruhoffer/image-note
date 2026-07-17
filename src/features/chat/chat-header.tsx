@@ -10,6 +10,7 @@ import {
   SidebarSimpleIcon,
   TrashIcon
 } from "@phosphor-icons/react";
+import { useNavigate } from "react-router";
 import { ThemeToggle } from "../../components/theme-toggle";
 import { McpServerMenu } from "./mcp-server-menu";
 
@@ -36,6 +37,8 @@ export function ChatHeader({
   onRemoveServer,
   onClearHistory
 }: ChatHeaderProps) {
+  const navigate = useNavigate();
+
   return (
     <header className="px-3 py-4 sm:px-5 bg-kumo-base border-b border-kumo-line">
       <div className="max-w-3xl mx-auto flex items-center justify-between">
@@ -82,7 +85,7 @@ export function ChatHeader({
           <Button
             variant="secondary"
             icon={<BooksIcon size={16} />}
-            onClick={() => window.location.assign("/library")}
+            onClick={() => void navigate("/library")}
           >
             <span className="hidden sm:inline">Library</span>
           </Button>

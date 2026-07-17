@@ -6,11 +6,13 @@ import {
   BooksIcon,
   ChatCircleDotsIcon
 } from "@phosphor-icons/react";
+import { useNavigate } from "react-router";
 import { ThemeToggle } from "../../components/theme-toggle";
 import { savedNotesResponseSchema, type SavedNote } from "../../notes";
 import { NoteCard } from "./note-card";
 
 export function LibraryPage() {
+  const navigate = useNavigate();
   const [notes, setNotes] = useState<SavedNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -105,7 +107,7 @@ export function LibraryPage() {
             <Button
               variant="primary"
               icon={<ChatCircleDotsIcon size={16} />}
-              onClick={() => window.location.assign("/")}
+              onClick={() => void navigate("/")}
             >
               Back to chat
             </Button>
@@ -151,10 +153,7 @@ export function LibraryPage() {
                   Add a screenshot in chat, then choose the note that captures
                   it best.
                 </Text>
-                <Button
-                  variant="primary"
-                  onClick={() => window.location.assign("/")}
-                >
+                <Button variant="primary" onClick={() => void navigate("/")}>
                   Add a screenshot
                 </Button>
               </div>
