@@ -1,4 +1,5 @@
 import {
+  startTransition,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -6,10 +7,11 @@ import {
   useState
 } from "react";
 import { Text } from "@cloudflare/kumo";
-import { useAgentChat } from "@cloudflare/ai-chat/react";
+import { getAgentMessages, useAgentChat } from "@cloudflare/ai-chat/react";
 import { ImageIcon } from "@phosphor-icons/react";
 import { useAgent } from "agents/react";
 import type { MCPServersState } from "agents";
+import type { UIMessage } from "ai";
 import type { ChatSummary } from "../../chats";
 import {
   MAX_IMAGE_BYTES_PER_MESSAGE,
@@ -30,6 +32,39 @@ import { ChatSidebar } from "./chat-sidebar";
 import { MessageList } from "./message-list";
 import { useChatHistory } from "./use-chat-history";
 
+const CHAT_PREFETCH_TTL = 30_000;
+const prefetchedMessages = new Map<
+  string,
+  { promise: Promise<UIMessage[]>; timeout: number }
+>();
+
+function prefetchChatMessages(chatId: string) {
+  const cached = prefetchedMessages.get(chatId);
+  if (cached) return cached.promise;
+
+  const promise = getAgentMessages<UIMessage>({
+    url: `/chat/${encodeURIComponent(chatId)}/get-messages`,
+    credentials: "same-origin"
+  });
+  const timeout = window.setTimeout(() => {
+    if (prefetchedMessages.get(chatId)?.promise === promise) {
+      prefetchedMessages.delete(chatId);
+    }
+  }, CHAT_PREFETCH_TTL);
+  prefetchedMessages.set(chatId, { promise, timeout });
+  return promise;
+}
+
+function consumeChatMessages(chatId: string) {
+  const promise = prefetchChatMessages(chatId);
+  const cached = prefetchedMessages.get(chatId);
+  if (cached) {
+    window.clearTimeout(cached.timeout);
+    prefetchedMessages.delete(chatId);
+  }
+  return promise;
+}
+
 export function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const {
@@ -49,7 +84,7 @@ export function ChatPage() {
 
   const handleSelectChat = useCallback(
     (chat: ChatSummary) => {
-      selectChat(chat);
+      startTransition(() => selectChat(chat));
       setSidebarOpen(false);
     },
     [selectChat]
@@ -116,6 +151,7 @@ export function ChatPage() {
           creating={creating}
           deletingChatId={deletingChatId}
           onSelect={handleSelectChat}
+          onPrefetch={(chat) => void prefetchChatMessages(chat.id)}
           onCreate={() => void handleCreateChat()}
           onDelete={(chat) => void handleDeleteChat(chat)}
         />
@@ -137,6 +173,7 @@ export function ChatPage() {
               creating={creating}
               deletingChatId={deletingChatId}
               onSelect={handleSelectChat}
+              onPrefetch={(chat) => void prefetchChatMessages(chat.id)}
               onCreate={() => void handleCreateChat()}
               onDelete={(chat) => void handleDeleteChat(chat)}
               onClose={() => setSidebarOpen(false)}
@@ -213,7 +250,11 @@ function ChatConversation({
     addToolApprovalResponse,
     stop,
     status
-  } = useAgentChat({ agent, experimental_throttle: 100 });
+  } = useAgentChat({
+    agent,
+    experimental_throttle: 100,
+    getInitialMessages: () => consumeChatMessages(chatId)
+  });
 
   const isStreaming = status === "streaming" || status === "submitted";
 

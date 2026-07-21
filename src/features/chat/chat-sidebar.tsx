@@ -14,6 +14,7 @@ interface ChatSidebarProps {
   deletingChatId: string | null;
   mobile?: boolean;
   onSelect: (chat: ChatSummary) => void;
+  onPrefetch: (chat: ChatSummary) => void;
   onCreate: () => void;
   onDelete: (chat: ChatSummary) => void;
   onClose?: () => void;
@@ -41,6 +42,7 @@ export function ChatSidebar({
   deletingChatId,
   mobile = false,
   onSelect,
+  onPrefetch,
   onCreate,
   onDelete,
   onClose
@@ -97,6 +99,12 @@ export function ChatSidebar({
                       : "text-kumo-subtle hover:bg-kumo-tint/70 hover:text-kumo-default"
                   }`}
                   aria-current={active ? "page" : undefined}
+                  onPointerEnter={() => {
+                    if (!active) onPrefetch(chat);
+                  }}
+                  onFocus={() => {
+                    if (!active) onPrefetch(chat);
+                  }}
                   onClick={() => onSelect(chat)}
                 >
                   <span className="block truncate text-sm font-medium">
