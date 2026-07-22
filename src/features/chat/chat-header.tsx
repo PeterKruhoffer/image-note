@@ -89,6 +89,14 @@ export function ChatHeader({
           >
             <span className="hidden sm:inline">Library</span>
           </Button>
+          <Button
+            variant="secondary"
+            icon={<ImageIcon size={16} />}
+            className="hidden lg:inline-flex"
+            onClick={() => void navigate("/playground")}
+          >
+            Playground
+          </Button>
           <div className="hidden sm:block">
             <McpServerMenu
               servers={servers}

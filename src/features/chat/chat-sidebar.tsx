@@ -1,10 +1,12 @@
 import { Button } from "@cloudflare/kumo";
 import {
   ChatCircleDotsIcon,
+  ImageIcon,
   PlusIcon,
   TrashIcon,
   XIcon
 } from "@phosphor-icons/react";
+import { Link } from "react-router";
 import type { ChatSummary } from "../../chats";
 
 interface ChatSidebarProps {
@@ -79,6 +81,13 @@ export function ChatSidebar({
         >
           New chat
         </Button>
+        <Link
+          to="/playground"
+          className="mt-2 flex items-center justify-center gap-2 rounded-lg border border-kumo-line px-3 py-2 text-sm font-medium text-kumo-default transition-colors hover:bg-kumo-tint"
+        >
+          <ImageIcon size={16} />
+          Open playground
+        </Link>
       </div>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">

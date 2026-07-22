@@ -11,9 +11,15 @@ const LibraryPage = lazy(() =>
     default: module.LibraryPage
   }))
 );
+const PlaygroundPage = lazy(() =>
+  import("./features/playground/playground-page").then((module) => ({
+    default: module.PlaygroundPage
+  }))
+);
 
 const router = createBrowserRouter([
   { path: "/", Component: ChatPage },
+  { path: "/playground", Component: PlaygroundPage },
   { path: "/library", Component: LibraryPage },
   { path: "*", element: <Navigate to="/" replace /> }
 ]);
