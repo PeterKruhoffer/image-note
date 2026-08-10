@@ -141,7 +141,7 @@ export class ChatAgent extends AIChatAgent<Env> {
       imageCount > 1 ? "createNoteCandidateBatch" : "createNoteCandidates";
 
     const result = streamText({
-      model: workersai("@cf/moonshotai/kimi-k2.6", {
+      model: workersai("@cf/google/gemma-4-26b-a4b-it", {
         sessionAffinity: this.sessionAffinity
       }),
       system: IMAGE_NOTE_SYSTEM_PROMPT,
