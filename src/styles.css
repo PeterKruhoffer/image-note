@@ -10,6 +10,11 @@ body,
   margin: 0;
 }
 
+html,
+body {
+  overscroll-behavior: none;
+}
+
 /* Shared art-deco application shell */
 .app-state,
 .auth-shell {
