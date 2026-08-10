@@ -1,11 +1,5 @@
 import { Button } from "@cloudflare/kumo";
-import {
-  ChatCircleDotsIcon,
-  ImageIcon,
-  PlusIcon,
-  TrashIcon,
-  XIcon
-} from "@phosphor-icons/react";
+import { ImageIcon, PlusIcon, TrashIcon, XIcon } from "@phosphor-icons/react";
 import { Link } from "react-router";
 import type { ChatSummary } from "../../chats";
 
@@ -51,13 +45,16 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   return (
     <aside
-      className={`${mobile ? "w-[min(20rem,calc(100vw-2rem))]" : "w-72"} flex h-full shrink-0 flex-col border-r border-kumo-line bg-kumo-base`}
+      className={`chat-sidebar ${mobile ? "w-[min(20rem,calc(100vw-2rem))]" : "w-72"} flex h-full shrink-0 flex-col border-r border-kumo-line bg-kumo-base`}
       aria-label="Chat history"
     >
-      <div className="flex items-center justify-between px-4 py-4">
-        <div className="flex items-center gap-2 text-kumo-default">
-          <ChatCircleDotsIcon size={21} weight="duotone" />
-          <span className="font-semibold">Chats</span>
+      <div className="chat-sidebar-heading flex items-center justify-between px-4 py-4">
+        <div className="flex items-center gap-3 text-kumo-default">
+          <span className="chat-sidebar-mark">IM</span>
+          <span className="chat-sidebar-title">
+            <strong>Image Mind</strong>
+            <small>Conversations</small>
+          </span>
         </div>
         {mobile && (
           <Button
@@ -71,7 +68,7 @@ export function ChatSidebar({
         )}
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="chat-sidebar-actions px-3 pb-3">
         <Button
           variant="primary"
           className="w-full justify-center"
@@ -90,7 +87,7 @@ export function ChatSidebar({
         </Link>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <nav className="chat-history min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         <p className="px-2 pb-2 pt-1 text-xs font-medium uppercase tracking-wide text-kumo-inactive">
           History
         </p>

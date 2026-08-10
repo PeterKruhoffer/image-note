@@ -12,7 +12,7 @@ const root = createRoot(document.getElementById("root")!);
 root.render(
   <ClerkProvider publishableKey={publishableKey} afterSignOutUrl="/">
     <Show when="signed-out">
-      <main className="flex min-h-screen items-center justify-center bg-kumo-elevated px-5 py-10">
+      <main className="auth-shell flex min-h-screen items-center justify-center bg-kumo-elevated px-5 py-10">
         <SignIn routing="hash" withSignUp />
       </main>
     </Show>

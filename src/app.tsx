@@ -28,7 +28,7 @@ export default function App() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center h-screen text-kumo-inactive">
+        <div className="app-state flex items-center justify-center h-screen text-kumo-inactive">
           Loading...
         </div>
       }

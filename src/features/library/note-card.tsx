@@ -1,96 +1,129 @@
-import { Badge, Button, LayerCard, Text } from "@cloudflare/kumo";
 import {
   ArrowSquareOutIcon,
   CalendarBlankIcon,
+  CaretDownIcon,
   TrashIcon
 } from "@phosphor-icons/react";
 import type { SavedNote } from "../../notes";
 
 interface NoteCardProps {
   note: SavedNote;
+  index: number;
+  viewMode: "grid" | "list";
   deleting: boolean;
   deleteDisabled: boolean;
+  onTopicSelect: (topic: string) => void;
   onDelete: (note: SavedNote) => void;
 }
 
+const KIND_LABELS: Record<SavedNote["kind"], string> = {
+  tweet: "Tweet",
+  article: "Article",
+  "social-post": "Social post",
+  quote: "Quote",
+  other: "Note"
+};
+
 export function NoteCard({
   note,
+  index,
+  viewMode,
   deleting,
   deleteDisabled,
+  onTopicSelect,
   onDelete
 }: NoteCardProps) {
+  const sourceName = getSourceName(note.sourceUrl);
+
   return (
-    <LayerCard className="rounded-xl ring ring-kumo-line p-5 space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <Badge variant="secondary">{note.kind.replace("-", " ")}</Badge>
-        <Text size="xs" variant="secondary">
-          {Math.round(note.confidence * 100)}% confidence
-        </Text>
+    <article className="library-note-card">
+      <div className="library-note-index">
+        {(index + 1).toString().padStart(2, "0")}
       </div>
-      <div>
-        <h2 className="font-semibold leading-snug">{note.title}</h2>
-        {note.author && (
-          <p className="mt-1 text-xs text-kumo-subtle">By {note.author}</p>
-        )}
-      </div>
-      <p className="text-sm leading-relaxed text-kumo-default">
-        {note.summary}
-      </p>
-      <details className="text-sm">
-        <summary className="cursor-pointer text-kumo-accent">
-          Read extracted text
-        </summary>
-        <p className="mt-2 whitespace-pre-wrap leading-relaxed text-kumo-subtle">
-          {note.content}
-        </p>
-      </details>
-      {note.topics.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {note.topics.map((topic) => (
-            <Badge key={topic} variant="secondary">
-              {topic}
-            </Badge>
-          ))}
+      <div className="library-note-content">
+        <div className="library-note-meta">
+          <span>{KIND_LABELS[note.kind]}</span>
+          {sourceName && <span>{sourceName}</span>}
         </div>
-      )}
-      <div className="pt-3 border-t border-kumo-line space-y-2">
-        {(note.publishedAt || note.createdAt) && (
-          <div className="flex items-center gap-1.5 text-xs text-kumo-subtle">
-            <CalendarBlankIcon size={13} />
-            {formatNoteDate(note.publishedAt ?? note.createdAt)}
+
+        <div className="library-note-heading">
+          <h3>{note.title}</h3>
+          {note.author && <p>By {note.author}</p>}
+        </div>
+
+        <p className="library-note-summary">{note.summary}</p>
+
+        {note.topics.length > 0 && (
+          <div className="library-note-topics" aria-label="Topics">
+            {note.topics.map((topic) => (
+              <button
+                key={topic}
+                type="button"
+                onClick={() => onTopicSelect(topic)}
+              >
+                #{topic}
+              </button>
+            ))}
           </div>
         )}
-        <div className="flex items-center justify-between gap-2">
-          {note.sourceUrl ? (
+
+        <details className="library-note-details">
+          <summary>
+            <span>{viewMode === "list" ? "View full note" : "Read note"}</span>
+            <CaretDownIcon size={14} />
+          </summary>
+          <p>{note.content}</p>
+        </details>
+      </div>
+
+      <footer className="library-note-footer">
+        <div>
+          <CalendarBlankIcon size={14} />
+          <span>{formatNoteDate(note.publishedAt ?? note.createdAt)}</span>
+        </div>
+        <div className="library-note-actions">
+          {note.sourceUrl && (
             <a
               href={note.sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-kumo-accent hover:underline"
+              aria-label={`Open source for ${note.title}`}
+              title="Open source"
             >
-              Open source <ArrowSquareOutIcon size={14} />
+              <ArrowSquareOutIcon size={17} />
             </a>
-          ) : (
-            <span />
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<TrashIcon size={14} />}
+          <button
+            type="button"
             disabled={deleteDisabled}
             onClick={() => onDelete(note)}
+            aria-label={`Delete ${note.title}`}
+            title={deleting ? "Deleting…" : "Delete note"}
           >
-            {deleting ? "Deleting…" : "Delete"}
-          </Button>
+            <TrashIcon size={16} />
+          </button>
         </div>
-      </div>
-    </LayerCard>
+      </footer>
+    </article>
   );
+}
+
+function getSourceName(value: string | null) {
+  if (!value) return null;
+  try {
+    return new URL(value).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
 }
 
 function formatNoteDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(date);
+    : new Intl.DateTimeFormat(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      }).format(date);
 }

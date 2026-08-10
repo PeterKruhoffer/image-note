@@ -37,7 +37,7 @@ export function NoteCandidatePicker({
 
   return (
     <section
-      className="space-y-3"
+      className="chat-note-picker space-y-3"
       aria-label={
         sourceLabel ? `Suggested notes for ${sourceLabel}` : "Suggested notes"
       }
@@ -58,7 +58,7 @@ export function NoteCandidatePicker({
           return (
             <LayerCard
               key={`${candidate.title}-${index}`}
-              className={`rounded-xl ring p-4 flex flex-col gap-3 ${
+              className={`chat-note-candidate rounded-xl ring p-4 flex flex-col gap-3 ${
                 isSaved ? "ring-2 ring-kumo-success" : "ring-kumo-line"
               } ${savedIndex !== null && !isSaved ? "opacity-55" : ""}`}
             >

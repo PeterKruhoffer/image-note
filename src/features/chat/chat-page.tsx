@@ -109,7 +109,7 @@ export function ChatPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-kumo-elevated text-kumo-inactive">
+      <div className="chat-shell app-state flex h-screen items-center justify-center bg-kumo-elevated text-kumo-inactive">
         Loading chats…
       </div>
     );
@@ -117,7 +117,7 @@ export function ChatPage() {
 
   if (error && !activeChatId) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-kumo-elevated px-5 text-center">
+      <div className="chat-shell app-state flex h-screen flex-col items-center justify-center gap-4 bg-kumo-elevated px-5 text-center">
         <p role="alert" className="text-sm text-kumo-danger">
           {error}
         </p>
@@ -135,7 +135,7 @@ export function ChatPage() {
   if (!activeChat) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-kumo-elevated">
+    <div className="chat-shell flex h-screen overflow-hidden bg-kumo-elevated">
       {error && (
         <div
           role="alert"
@@ -444,7 +444,7 @@ function ChatConversation({
 
   return (
     <div
-      className="relative flex h-screen min-w-0 flex-1 flex-col bg-kumo-elevated"
+      className="chat-conversation relative flex h-screen min-w-0 flex-1 flex-col bg-kumo-elevated"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}

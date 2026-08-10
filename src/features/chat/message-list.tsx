@@ -24,19 +24,21 @@ export function MessageList({
   endRef
 }: MessageListProps) {
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-5 py-6 space-y-5">
+    <div className="chat-messages flex-1 overflow-y-auto">
+      <div className="chat-message-column max-w-3xl mx-auto px-5 py-6 space-y-5">
         {messages.length === 0 && (
-          <Empty
-            icon={<ChatCircleDotsIcon size={32} />}
-            title="Turn a screenshot into a note"
-            contents={
-              <Text size="sm" variant="secondary">
-                Paste, drop, or attach up to four images. Each image gets three
-                concise note candidates.
-              </Text>
-            }
-          />
+          <div className="chat-empty-state">
+            <Empty
+              icon={<ChatCircleDotsIcon size={32} />}
+              title="Turn a screenshot into a note"
+              contents={
+                <Text size="sm" variant="secondary">
+                  Paste, drop, or attach up to four images. Each image gets
+                  three concise note candidates.
+                </Text>
+              }
+            />
+          </div>
         )}
 
         {messages.map((message, index) => (

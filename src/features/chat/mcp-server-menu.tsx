@@ -74,6 +74,7 @@ export function McpServerMenu({
       <Button
         variant="secondary"
         icon={<PlugsConnectedIcon size={16} />}
+        aria-label="Open MCP servers"
         onClick={() => setIsOpen((current) => !current)}
       >
         MCP
@@ -87,7 +88,7 @@ export function McpServerMenu({
 
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-96 z-50">
-          <LayerCard className="rounded-xl ring ring-kumo-line shadow-lg p-4 space-y-4">
+          <LayerCard className="chat-mcp-panel rounded-xl ring ring-kumo-line shadow-lg p-4 space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <PlugsConnectedIcon size={16} className="text-kumo-accent" />

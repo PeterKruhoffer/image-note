@@ -40,8 +40,8 @@ export function ChatHeader({
   const navigate = useNavigate();
 
   return (
-    <header className="px-3 py-4 sm:px-5 bg-kumo-base border-b border-kumo-line">
-      <div className="max-w-3xl mx-auto flex items-center justify-between">
+    <header className="chat-header px-3 py-4 sm:px-5 bg-kumo-base border-b border-kumo-line">
+      <div className="chat-header-inner max-w-3xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -51,7 +51,7 @@ export function ChatHeader({
             className="md:hidden"
             onClick={onOpenSidebar}
           />
-          <h1 className="text-lg font-semibold text-kumo-default">
+          <h1 className="chat-header-brand text-lg font-semibold text-kumo-default">
             <ImageIcon size={20} className="mr-2 inline-block" />
             Image Mind
           </h1>
@@ -60,7 +60,7 @@ export function ChatHeader({
             Image notes
           </Badge>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="chat-header-actions flex items-center gap-3">
           <div className="hidden items-center gap-1.5 xl:flex">
             <CircleIcon
               size={8}
@@ -85,6 +85,7 @@ export function ChatHeader({
           <Button
             variant="secondary"
             icon={<BooksIcon size={16} />}
+            aria-label="Open library"
             onClick={() => void navigate("/library")}
           >
             <span className="hidden sm:inline">Library</span>
@@ -92,6 +93,7 @@ export function ChatHeader({
           <Button
             variant="secondary"
             icon={<ImageIcon size={16} />}
+            aria-label="Open playground"
             className="hidden lg:inline-flex"
             onClick={() => void navigate("/playground")}
           >
@@ -108,6 +110,7 @@ export function ChatHeader({
           <Button
             variant="secondary"
             icon={<TrashIcon size={16} />}
+            aria-label="Clear chat history"
             className="hidden sm:inline-flex"
             onClick={onClearHistory}
           >

@@ -52,13 +52,13 @@ export function ChatComposer({
   onStop
 }: ChatComposerProps) {
   return (
-    <div className="border-t border-kumo-line bg-kumo-base">
+    <div className="chat-composer border-t border-kumo-line bg-kumo-base">
       <form
         onSubmit={(event) => {
           event.preventDefault();
           onSend();
         }}
-        className="max-w-3xl mx-auto px-5 py-4"
+        className="chat-composer-form max-w-3xl mx-auto px-5 py-4"
       >
         <input
           ref={fileInputRef}
@@ -114,7 +114,7 @@ export function ChatComposer({
           </p>
         )}
 
-        <div className="flex items-end gap-3 rounded-xl border border-kumo-line bg-kumo-base p-3 shadow-sm focus-within:ring-2 focus-within:ring-kumo-ring focus-within:border-transparent transition-shadow">
+        <div className="chat-composer-frame flex items-end gap-3 rounded-xl border border-kumo-line bg-kumo-base p-3 shadow-sm focus-within:ring-2 focus-within:ring-kumo-ring focus-within:border-transparent transition-shadow">
           <Button
             type="button"
             variant="ghost"

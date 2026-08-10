@@ -33,7 +33,9 @@ export function ChatMessage({
   );
 
   return (
-    <div className="space-y-2">
+    <div
+      className={`chat-message ${isUser ? "is-user" : "is-assistant"} space-y-2`}
+    >
       {showDebug && (
         <pre className="text-[11px] text-kumo-subtle bg-kumo-control rounded-lg p-3 overflow-auto max-h-64">
           {JSON.stringify(message, null, 2)}
@@ -64,7 +66,10 @@ export function ChatMessage({
           const isDone = reasoning.state === "done" || !isStreaming;
           return (
             <div key={index} className="flex justify-start">
-              <details className="max-w-[85%] w-full" open={!isDone}>
+              <details
+                className="chat-reasoning max-w-[85%] w-full"
+                open={!isDone}
+              >
                 <summary className="flex items-center gap-2 cursor-pointer px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-sm select-none">
                   <BrainIcon size={14} className="text-purple-400" />
                   <span className="font-medium text-kumo-default">
@@ -99,7 +104,7 @@ export function ChatMessage({
               alt={
                 imageParts.length > 1 ? `Attachment ${index + 1}` : "Attachment"
               }
-              className="max-h-64 rounded-xl border border-kumo-line object-contain"
+              className="chat-attachment max-h-64 rounded-xl border border-kumo-line object-contain"
             />
             {imageParts.length > 1 && (
               <span className="absolute left-2 top-2 rounded-md bg-kumo-contrast/85 px-2 py-1 text-xs font-medium text-kumo-inverse shadow-sm">
@@ -119,7 +124,7 @@ export function ChatMessage({
           if (isUser) {
             return (
               <div key={index} className="flex justify-end">
-                <div className="max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-md bg-kumo-contrast text-kumo-inverse leading-relaxed">
+                <div className="chat-user-bubble max-w-[85%] px-4 py-2.5 rounded-2xl rounded-br-md bg-kumo-contrast text-kumo-inverse leading-relaxed">
                   {text}
                 </div>
               </div>
@@ -128,7 +133,7 @@ export function ChatMessage({
 
           return (
             <div key={index} className="flex justify-start">
-              <div className="max-w-[85%] rounded-2xl rounded-bl-md bg-kumo-base text-kumo-default leading-relaxed">
+              <div className="chat-assistant-bubble max-w-[85%] rounded-2xl rounded-bl-md bg-kumo-base text-kumo-default leading-relaxed">
                 <Streamdown
                   className="sd-theme rounded-2xl rounded-bl-md p-3"
                   plugins={{ code }}
