@@ -290,25 +290,10 @@ export function LibraryPage() {
           <EmptyLibrary onAdd={() => void navigate("/")} />
         ) : (
           <>
-            <section className="library-hero" aria-labelledby="library-title">
-              <div className="library-hero-copy">
-                <p className="library-eyebrow">
-                  <span>Personal knowledge, organized</span>
-                  <span>{notes.length.toString().padStart(2, "0")} notes</span>
-                </p>
-                <div className="library-title-row">
-                  <h1 id="library-title">
-                    Find the thought
-                    <br />
-                    <em>you saved.</em>
-                  </h1>
-                  <p>
-                    Search what you remember, or follow a broad thread until the
-                    right idea comes back into view.
-                  </p>
-                </div>
-              </div>
-
+            <section
+              className="library-overview"
+              aria-label="Library search and summary"
+            >
               <div className="library-search-wrap">
                 <MagnifyingGlassIcon size={24} aria-hidden="true" />
                 <input
@@ -527,7 +512,6 @@ export function LibraryPage() {
 function LibrarySkeleton() {
   return (
     <div className="library-skeleton" aria-label="Loading saved notes">
-      <div className="library-skeleton-title" />
       <div className="library-skeleton-search" />
       <div className="library-skeleton-categories">
         {[0, 1, 2, 3].map((item) => (
