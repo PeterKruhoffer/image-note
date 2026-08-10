@@ -27,43 +27,27 @@ import {
   WarningCircleIcon,
   XIcon
 } from "@phosphor-icons/react";
-import { useAgent } from "agents/react";
-import { useAgentChat } from "@cloudflare/ai-chat/react";
-import { getToolName, isToolUIPart, type UIMessage } from "ai";
 import { Link } from "react-router";
-import { chatResponseSchema } from "../../chats";
 import { ThemeToggle } from "../../components/theme-toggle";
-import { MAX_IMAGE_BYTES_PER_MESSAGE } from "../../image-limits";
+import { imageAnalysisResponseSchema } from "../../image-analysis";
+import { savedNoteSchema, type NoteCandidate } from "../../notes";
 import {
-  noteCandidatesOutputSchema,
-  savedNoteSchema,
-  type NoteCandidate
-} from "../../notes";
-import type { ChatAgent } from "../../server/chat-agent";
-import {
-  createAttachment,
+  createImageAttachment,
   IMAGE_INPUT_ACCEPT,
   isSupportedImage,
   prepareImage,
-  type Attachment,
+  type ImageAttachment,
   type PreparedImage
-} from "../chat/attachments";
+} from "./image-attachments";
 
 const MAX_CONCURRENT_JOBS = 4;
 
-type JobPhase =
-  | "queued"
-  | "preparing"
-  | "provisioning"
-  | "connecting"
-  | "analyzing"
-  | "complete"
-  | "error";
+type JobPhase = "queued" | "preparing" | "analyzing" | "complete" | "error";
 
-interface PlaygroundJob extends Attachment {
+interface HomeJob extends ImageAttachment {
   phase: JobPhase;
   imagePreparation?: Promise<ImagePreparationResult>;
-  agentSetup?: Promise<AgentSetupResult>;
+  analysis?: Promise<AnalysisResult>;
   error?: string;
 }
 
@@ -74,16 +58,9 @@ interface SetupFailure {
 
 type ImagePreparationResult = { ok: true; image: PreparedImage } | SetupFailure;
 
-type AgentSetupResult =
-  | { ok: true; image: PreparedImage; chatId: string }
-  | SetupFailure;
+type AnalysisResult = { ok: true; candidates: NoteCandidate[] } | SetupFailure;
 
-const ACTIVE_PHASES = new Set<JobPhase>([
-  "preparing",
-  "provisioning",
-  "connecting",
-  "analyzing"
-]);
+const ACTIVE_PHASES = new Set<JobPhase>(["preparing", "analyzing"]);
 
 function phaseLabel(phase: JobPhase) {
   switch (phase) {
@@ -91,10 +68,6 @@ function phaseLabel(phase: JobPhase) {
       return "In queue";
     case "preparing":
       return "Preparing image";
-    case "provisioning":
-      return "Assigning agent";
-    case "connecting":
-      return "Waking agent";
     case "analyzing":
       return "Reading image";
     case "complete":
@@ -106,12 +79,11 @@ function phaseLabel(phase: JobPhase) {
 
 function createJobResources(file: File) {
   const imagePreparation: Promise<ImagePreparationResult> = prepareImage(
-    file,
-    MAX_IMAGE_BYTES_PER_MESSAGE
+    file
   ).then(
     (image) => ({ ok: true, image }),
     (cause) => {
-      console.error("Failed to prepare playground image:", cause);
+      console.error("Failed to prepare home image:", cause);
       return {
         ok: false,
         error: "The image could not be prepared. Try a smaller screenshot."
@@ -119,53 +91,36 @@ function createJobResources(file: File) {
     }
   );
 
-  const agentSetup: Promise<AgentSetupResult> = imagePreparation.then(
+  const analysis: Promise<AnalysisResult> = imagePreparation.then(
     async (prepared) => {
       if (!prepared.ok) return prepared;
       try {
-        const response = await fetch("/api/chats", {
+        const response = await fetch("/api/analyze", {
           method: "POST",
           credentials: "same-origin",
-          headers: { accept: "application/json" }
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(prepared.image)
         });
         if (!response.ok)
           throw new Error(`Request failed (${response.status})`);
-        const { chat } = chatResponseSchema.parse(await response.json());
-        return { ok: true, image: prepared.image, chatId: chat.id };
+        const { candidates } = imageAnalysisResponseSchema.parse(
+          await response.json()
+        );
+        return { ok: true, candidates };
       } catch (cause) {
-        console.error("Failed to create playground agent:", cause);
+        console.error("Failed to analyze home image:", cause);
         return {
           ok: false,
-          error: "A dedicated agent could not be created for this image."
+          error: "The image analysis did not complete."
         };
       }
     }
   );
 
-  return { imagePreparation, agentSetup };
-}
-
-function getCandidates(messages: UIMessage[]) {
-  for (
-    let messageIndex = messages.length - 1;
-    messageIndex >= 0;
-    messageIndex -= 1
-  ) {
-    const message = messages[messageIndex];
-    if (!message) continue;
-    for (const part of message.parts) {
-      if (
-        !isToolUIPart(part) ||
-        getToolName(part) !== "createNoteCandidates" ||
-        part.state !== "output-available"
-      ) {
-        continue;
-      }
-      const output = noteCandidatesOutputSchema.safeParse(part.output);
-      if (output.success) return output.data.candidates;
-    }
-  }
-  return null;
+  return { imagePreparation, analysis };
 }
 
 function SuggestionSet({
@@ -187,7 +142,7 @@ function SuggestionSet({
         await saveNote(selection.candidate);
         return { savedIndex: selection.index, error: null };
       } catch (cause) {
-        console.error("Failed to save playground suggestion:", cause);
+        console.error("Failed to save home suggestion:", cause);
         return {
           savedIndex: null,
           error: "This note could not be saved. Try it again."
@@ -210,12 +165,12 @@ function SuggestionSet({
   };
 
   return (
-    <div className="playground-suggestions">
-      <div className="playground-suggestion-heading">
+    <div className="home-suggestions">
+      <div className="home-suggestion-heading">
         <span>Three readings</span>
         <span>Choose the one worth keeping</span>
       </div>
-      <div className="playground-suggestion-grid">
+      <div className="home-suggestion-grid">
         {candidates.map((candidate, index) => {
           const saved = saveState.savedIndex === index;
           const saving = isSaving && optimisticIndex === index;
@@ -225,24 +180,24 @@ function SuggestionSet({
             <button
               type="button"
               key={`${candidate.title}-${index}`}
-              className={`playground-suggestion ${saved ? "is-saved" : ""} ${
+              className={`home-suggestion ${saved ? "is-saved" : ""} ${
                 inactive ? "is-inactive" : ""
               }`}
               disabled={isSaving || saveState.savedIndex !== null}
               onClick={() => choose(candidate, index)}
             >
-              <span className="playground-suggestion-number">0{index + 1}</span>
-              <span className="playground-suggestion-kind">
+              <span className="home-suggestion-number">0{index + 1}</span>
+              <span className="home-suggestion-kind">
                 {candidate.kind.replace("-", " ")}
               </span>
               <strong>{candidate.title}</strong>
-              <span className="playground-suggestion-summary">
+              <span className="home-suggestion-summary">
                 {candidate.summary}
               </span>
-              <span className="playground-suggestion-topics">
+              <span className="home-suggestion-topics">
                 {candidate.topics.slice(0, 3).join(" / ")}
               </span>
-              <span className="playground-suggestion-action">
+              <span className="home-suggestion-action">
                 {saved ? (
                   <>
                     <CheckIcon size={14} weight="bold" /> Saved to library
@@ -262,7 +217,7 @@ function SuggestionSet({
         })}
       </div>
       {saveState.error && (
-        <p role="alert" className="playground-inline-error">
+        <p role="alert" className="home-inline-error">
           {saveState.error}
         </p>
       )}
@@ -270,94 +225,41 @@ function SuggestionSet({
   );
 }
 
-function PlaygroundAgent({
+function AnalyzedImageJob({
   jobId,
-  chatId,
-  image,
+  analysis,
   onPhaseChange
 }: {
   jobId: string;
-  chatId: string;
-  image: PreparedImage;
+  analysis: Promise<AnalysisResult>;
   onPhaseChange: (id: string, phase: JobPhase, error?: string) => void;
 }) {
-  const sent = useRef(false);
-  const [connected, setConnected] = useState(false);
+  const result = use(analysis);
   const reportPhase = useEffectEvent(onPhaseChange);
-  const agent = useAgent<ChatAgent>({
-    agent: "ChatAgent",
-    name: chatId,
-    basePath: `chat/${encodeURIComponent(chatId)}`,
-    onOpen: useCallback(() => setConnected(true), []),
-    onClose: useCallback(() => setConnected(false), []),
-    onError: useCallback(
-      (cause: Event) =>
-        console.error("Playground agent connection failed:", cause),
-      []
-    )
-  });
-  const { messages, sendMessage, status, error } = useAgentChat({
-    agent,
-    experimental_throttle: 100,
-    getInitialMessages: async (): Promise<UIMessage[]> => []
-  });
-  const candidates = getCandidates(messages);
 
   useEffect(() => {
-    if (!connected || sent.current) return;
-    sent.current = true;
-    reportPhase(jobId, "analyzing");
-    sendMessage({
-      role: "user",
-      parts: [{ type: "file", ...image }]
+    if (result.ok) reportPhase(jobId, "complete");
+    else reportPhase(jobId, "error", result.error);
+  }, [jobId, result]);
+
+  const saveNote = useCallback(async (candidate: NoteCandidate) => {
+    const response = await fetch("/api/notes", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(candidate)
     });
-  }, [connected, image, jobId, sendMessage]);
+    if (!response.ok) throw new Error(`Request failed (${response.status})`);
+    const payload = (await response.json()) as { note?: unknown };
+    savedNoteSchema.parse(payload.note);
+  }, []);
 
-  useEffect(() => {
-    if (candidates) reportPhase(jobId, "complete");
-  }, [candidates, jobId]);
-
-  useEffect(() => {
-    if (error) {
-      console.error("Playground image analysis failed:", error);
-      reportPhase(jobId, "error", "The image analysis did not complete.");
-    }
-  }, [error, jobId]);
-
-  const saveNote = useCallback(
-    async (candidate: NoteCandidate) => {
-      savedNoteSchema.parse(await agent.stub.saveNote(candidate));
-    },
-    [agent]
-  );
-
-  if (!connected) {
-    return (
-      <JobLoadingState
-        stage="Stage 03 / Connection"
-        title="Waking the dedicated agent..."
-        description="Opening this image's isolated live session."
-      />
-    );
-  }
-
-  if (candidates) {
-    return <SuggestionSet candidates={candidates} saveNote={saveNote} />;
-  }
-
-  return (
-    <JobLoadingState
-      stage="Stage 04 / Analysis"
-      title={
-        status === "submitted"
-          ? "Transferring the image..."
-          : status === "streaming"
-            ? "Looking for what matters..."
-            : "Finalizing three suggestions..."
-      }
-      description="Extracting three distinct, concise notes from this image."
-    />
-  );
+  return result.ok ? (
+    <SuggestionSet candidates={result.candidates} saveNote={saveNote} />
+  ) : null;
 }
 
 function JobLoadingState({
@@ -370,10 +272,10 @@ function JobLoadingState({
   description: string;
 }) {
   return (
-    <div className="playground-agent-thinking" aria-live="polite">
-      <span className="playground-scan-line" />
+    <div className="home-analysis-thinking" aria-live="polite">
+      <span className="home-scan-line" />
       <div>
-        <span className="playground-agent-kicker">{stage}</span>
+        <span className="home-analysis-kicker">{stage}</span>
         <strong>{title}</strong>
         <p>{description}</p>
       </div>
@@ -401,56 +303,21 @@ function SetupFailureView({
   );
 }
 
-function ProvisionedImageJob({
-  jobId,
-  agentSetup,
-  onPhaseChange
-}: {
-  jobId: string;
-  agentSetup: Promise<AgentSetupResult>;
-  onPhaseChange: (id: string, phase: JobPhase, error?: string) => void;
-}) {
-  const setup = use(agentSetup);
-  const reportPhase = useEffectEvent(onPhaseChange);
-  useEffect(() => {
-    if (setup.ok) reportPhase(jobId, "connecting");
-  }, [jobId, setup]);
-
-  if (!setup.ok) {
-    return (
-      <SetupFailureView
-        jobId={jobId}
-        error={setup.error}
-        onPhaseChange={onPhaseChange}
-      />
-    );
-  }
-
-  return (
-    <PlaygroundAgent
-      jobId={jobId}
-      chatId={setup.chatId}
-      image={setup.image}
-      onPhaseChange={onPhaseChange}
-    />
-  );
-}
-
 function PreparedImageJob({
   jobId,
   imagePreparation,
-  agentSetup,
+  analysis,
   onPhaseChange
 }: {
   jobId: string;
   imagePreparation: Promise<ImagePreparationResult>;
-  agentSetup: Promise<AgentSetupResult>;
+  analysis: Promise<AnalysisResult>;
   onPhaseChange: (id: string, phase: JobPhase, error?: string) => void;
 }) {
   const prepared = use(imagePreparation);
   const reportPhase = useEffectEvent(onPhaseChange);
   useEffect(() => {
-    if (prepared.ok) reportPhase(jobId, "provisioning");
+    if (prepared.ok) reportPhase(jobId, "analyzing");
   }, [jobId, prepared]);
 
   if (!prepared.ok) {
@@ -467,28 +334,22 @@ function PreparedImageJob({
     <Suspense
       fallback={
         <JobLoadingState
-          stage="Stage 02 / Agent"
-          title="Assigning a durable agent..."
-          description="Creating an isolated context for this image."
+          stage="Stage 02 / Analysis"
+          title="Looking for what matters..."
+          description="Extracting three distinct, concise notes from this image."
         />
       }
     >
-      <ProvisionedImageJob
+      <AnalyzedImageJob
         jobId={jobId}
-        agentSetup={agentSetup}
+        analysis={analysis}
         onPhaseChange={onPhaseChange}
       />
     </Suspense>
   );
 }
 
-function ImageViewer({
-  job,
-  onClose
-}: {
-  job: PlaygroundJob;
-  onClose: () => void;
-}) {
+function ImageViewer({ job, onClose }: { job: HomeJob; onClose: () => void }) {
   const [actualSize, setActualSize] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const closeViewer = useEffectEvent(onClose);
@@ -512,16 +373,16 @@ function ImageViewer({
   return createPortal(
     <dialog
       open
-      className="playground-image-viewer"
+      className="home-image-viewer"
       aria-modal="true"
       aria-label={`Full-size preview of ${job.file.name}`}
     >
-      <div className="playground-image-viewer-bar">
+      <div className="home-image-viewer-bar">
         <div>
           <span>Source image</span>
           <strong>{job.file.name}</strong>
         </div>
-        <div className="playground-image-viewer-actions">
+        <div className="home-image-viewer-actions">
           <button
             type="button"
             onClick={() => setActualSize((current) => !current)}
@@ -542,17 +403,17 @@ function ImageViewer({
         </div>
       </div>
       <div
-        className={`playground-image-viewer-canvas ${actualSize ? "is-actual-size" : ""}`}
+        className={`home-image-viewer-canvas ${actualSize ? "is-actual-size" : ""}`}
       >
         <button
           type="button"
-          className="playground-image-viewer-backdrop"
+          className="home-image-viewer-backdrop"
           aria-label="Close image viewer"
           onClick={onClose}
         />
         <img src={job.preview} alt={job.file.name} />
       </div>
-      <span className="playground-image-viewer-hint">
+      <span className="home-image-viewer-hint">
         {actualSize ? "Scroll to inspect the full image" : "Fit to screen"} /
         Esc to close
       </span>
@@ -568,7 +429,7 @@ const ImageJob = memo(function ImageJob({
   onRetry,
   onPhaseChange
 }: {
-  job: PlaygroundJob;
+  job: HomeJob;
   index: number;
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
@@ -578,16 +439,16 @@ const ImageJob = memo(function ImageJob({
   const [viewerOpen, setViewerOpen] = useState(false);
 
   return (
-    <article className="playground-job" data-playground-job={job.id}>
-      <div className="playground-job-meta">
-        <span className="playground-job-index">
+    <article className="home-job" data-home-job={job.id}>
+      <div className="home-job-meta">
+        <span className="home-job-index">
           {String(index + 1).padStart(2, "0")}
         </span>
-        <div className="playground-job-title">
+        <div className="home-job-title">
           <strong title={job.file.name}>{job.file.name}</strong>
           <span>{Math.max(1, Math.round(job.file.size / 1024))} KB</span>
         </div>
-        <span className={`playground-status is-${job.phase}`}>
+        <span className={`home-status is-${job.phase}`}>
           {active && <SpinnerGapIcon size={13} className="animate-spin" />}
           {job.phase === "complete" && <CheckIcon size={13} weight="bold" />}
           {job.phase === "error" && <WarningCircleIcon size={13} />}
@@ -596,7 +457,7 @@ const ImageJob = memo(function ImageJob({
         {!active && (
           <button
             type="button"
-            className="playground-icon-button"
+            className="home-icon-button"
             aria-label={`Remove ${job.file.name}`}
             onClick={() => onRemove(job.id)}
           >
@@ -605,11 +466,11 @@ const ImageJob = memo(function ImageJob({
         )}
       </div>
 
-      <div className="playground-job-body">
-        <div className="playground-source">
+      <div className="home-job-body">
+        <div className="home-source">
           <button
             type="button"
-            className="playground-source-button"
+            className="home-source-button"
             aria-label={`View ${job.file.name} full size`}
             onClick={() => setViewerOpen(true)}
           >
@@ -618,19 +479,19 @@ const ImageJob = memo(function ImageJob({
               <ImageIcon size={15} /> View full size
             </span>
           </button>
-          <div className="playground-source-caption">
+          <div className="home-source-caption">
             <span>Source image</span>
-            <span>Agent {String(index + 1).padStart(2, "0")}</span>
+            <span>Image {String(index + 1).padStart(2, "0")}</span>
           </div>
         </div>
-        <div className="playground-output">
+        <div className="home-output">
           {job.phase === "queued" && (
-            <div className="playground-waiting">
+            <div className="home-waiting">
               <span>Waiting on the desk</span>
               <p>Start the run when your contact sheet is ready.</p>
             </div>
           )}
-          {job.imagePreparation && job.agentSetup && job.phase !== "error" && (
+          {job.imagePreparation && job.analysis && job.phase !== "error" && (
             <Suspense
               fallback={
                 <JobLoadingState
@@ -643,16 +504,16 @@ const ImageJob = memo(function ImageJob({
               <PreparedImageJob
                 jobId={job.id}
                 imagePreparation={job.imagePreparation}
-                agentSetup={job.agentSetup}
+                analysis={job.analysis}
                 onPhaseChange={onPhaseChange}
               />
             </Suspense>
           )}
           {job.phase === "error" && (
-            <div className="playground-job-error">
+            <div className="home-job-error">
               <WarningCircleIcon size={22} />
               <div>
-                <strong>The agent could not finish this image.</strong>
+                <strong>The analysis could not finish this image.</strong>
                 <p>{job.error ?? "Try preparing the image again."}</p>
               </div>
               <button type="button" onClick={() => onRetry(job.id)}>
@@ -669,8 +530,8 @@ const ImageJob = memo(function ImageJob({
   );
 });
 
-export function PlaygroundPage() {
-  const [jobs, setJobs] = useState<PlaygroundJob[]>([]);
+export function HomePage() {
+  const [jobs, setJobs] = useState<HomeJob[]>([]);
   const [running, setRunning] = useState(false);
   const [isStartingRun, startRunTransition] = useTransition();
   const [dragging, setDragging] = useState(false);
@@ -681,17 +542,17 @@ export function PlaygroundPage() {
   jobsRef.current = jobs;
 
   const updateJobsPreservingScroll = useCallback(
-    (update: (current: PlaygroundJob[]) => PlaygroundJob[]) => {
+    (update: (current: HomeJob[]) => HomeJob[]) => {
       if (!scrollAnchorRef.current) {
         const anchor = Array.from(
-          document.querySelectorAll<HTMLElement>("[data-playground-job]")
+          document.querySelectorAll<HTMLElement>("[data-home-job]")
         ).find((element) => {
           const bounds = element.getBoundingClientRect();
           return bounds.bottom > 0 && bounds.top < window.innerHeight;
         });
-        if (anchor?.dataset.playgroundJob) {
+        if (anchor?.dataset.homeJob) {
           scrollAnchorRef.current = {
-            id: anchor.dataset.playgroundJob,
+            id: anchor.dataset.homeJob,
             top: anchor.getBoundingClientRect().top
           };
         }
@@ -706,7 +567,7 @@ export function PlaygroundPage() {
     scrollAnchorRef.current = null;
     if (!anchor) return;
     const element = document.querySelector<HTMLElement>(
-      `[data-playground-job="${CSS.escape(anchor.id)}"]`
+      `[data-home-job="${CSS.escape(anchor.id)}"]`
     );
     if (!element) return;
     const offset = element.getBoundingClientRect().top - anchor.top;
@@ -736,7 +597,7 @@ export function PlaygroundPage() {
       setJobs((current) => [
         ...current,
         ...images.map((file) => ({
-          ...createAttachment(file),
+          ...createImageAttachment(file),
           phase: "queued" as const
         }))
       ]);
@@ -817,7 +678,7 @@ export function PlaygroundPage() {
                   phase: "queued",
                   error: undefined,
                   imagePreparation: undefined,
-                  agentSetup: undefined
+                  analysis: undefined
                 }
               : job
           )
@@ -841,7 +702,7 @@ export function PlaygroundPage() {
 
   return (
     <div
-      className="playground-shell"
+      className="home-shell"
       onPaste={handlePaste}
       onDragOver={(event) => {
         event.preventDefault();
@@ -858,20 +719,19 @@ export function PlaygroundPage() {
       }}
     >
       {dragging && (
-        <div className="playground-drop-overlay">
+        <div className="home-drop-overlay">
           <UploadSimpleIcon size={42} />
           <strong>Release the images</strong>
           <span>They will join the contact sheet</span>
         </div>
       )}
 
-      <header className="playground-header">
-        <Link to="/playground" className="playground-brand">
+      <header className="home-header">
+        <Link to="/" className="home-brand">
           <span>IM</span>
           <strong>Image Mind</strong>
         </Link>
         <nav aria-label="Primary navigation">
-          <Link to="/">Chat</Link>
           <Link to="/library">
             <BooksIcon size={15} /> Library
           </Link>
@@ -881,41 +741,28 @@ export function PlaygroundPage() {
       </header>
 
       <main>
-        <section className="playground-intro">
-          <div className="playground-eyebrow">
-            <span>Playground 01</span>
-            <span>Parallel image desk</span>
-          </div>
-          <div className="playground-intro-grid">
+        <section className="home-intro">
+          <div className="home-intro-grid">
             <h1>
-              Drop the chat.
+              Drop the images.
               <br />
               <em>Keep the ideas.</em>
             </h1>
-            <div className="playground-thesis">
-              <p>
-                Upload a stack of images. Each one gets its own agent, its own
-                context, and three concise ways to remember what matters.
-              </p>
-              <div className="playground-method">
-                <span>
-                  <b>01</b> Add images
-                </span>
-                <span>
-                  <b>02</b> Agents read in parallel
-                </span>
-                <span>
-                  <b>03</b> Keep your best notes
-                </span>
-              </div>
+            <div className="home-method">
+              <span>
+                <b>01</b> Add images
+              </span>
+              <span>
+                <b>02</b> Analyze in parallel
+              </span>
+              <span>
+                <b>03</b> Keep your best notes
+              </span>
             </div>
           </div>
         </section>
 
-        <section
-          className="playground-controls"
-          aria-label="Image upload controls"
-        >
+        <section className="home-controls" aria-label="Image upload controls">
           <input
             ref={fileInputRef}
             type="file"
@@ -929,7 +776,7 @@ export function PlaygroundPage() {
           />
           <button
             type="button"
-            className="playground-add-button"
+            className="home-add-button"
             onClick={() => fileInputRef.current?.click()}
           >
             <span>
@@ -938,13 +785,13 @@ export function PlaygroundPage() {
             <strong>Add images</strong>
             <small>Browse, drop, or paste a collection</small>
           </button>
-          <div className="playground-run-panel">
+          <div className="home-run-panel">
             <div>
-              <span className="playground-run-count">{jobs.length}</span>
+              <span className="home-run-count">{jobs.length}</span>
               <span>images on desk</span>
             </div>
             <div>
-              <span className="playground-run-count">{completeCount}</span>
+              <span className="home-run-count">{completeCount}</span>
               <span>finished</span>
             </div>
             <button
@@ -958,13 +805,13 @@ export function PlaygroundPage() {
             >
               {running || isStartingRun ? (
                 <>
-                  <SpinnerGapIcon size={17} className="animate-spin" /> Agents
-                  working
+                  <SpinnerGapIcon size={17} className="animate-spin" />
+                  Analyzing
                 </>
               ) : (
                 <>
-                  Run {queuedCount || "the"}{" "}
-                  {queuedCount === 1 ? "agent" : "agents"}{" "}
+                  Analyze {queuedCount || "the"}{" "}
+                  {queuedCount === 1 ? "image" : "images"}{" "}
                   <ArrowRightIcon size={17} />
                 </>
               )}
@@ -972,14 +819,14 @@ export function PlaygroundPage() {
           </div>
         </section>
         {inputError && (
-          <p role="alert" className="playground-input-error">
+          <p role="alert" className="home-input-error">
             {inputError}
           </p>
         )}
 
         {jobs.length === 0 ? (
-          <section className="playground-empty">
-            <div className="playground-empty-mark">
+          <section className="home-empty">
+            <div className="home-empty-mark">
               <ImageIcon size={48} weight="thin" />
             </div>
             <p>Your contact sheet is empty.</p>
@@ -988,8 +835,8 @@ export function PlaygroundPage() {
             </span>
           </section>
         ) : (
-          <section className="playground-desk" aria-label="Image analysis jobs">
-            <div className="playground-desk-heading">
+          <section className="home-desk" aria-label="Image analysis jobs">
+            <div className="home-desk-heading">
               <span>
                 Contact sheet / {String(jobs.length).padStart(2, "0")}
               </span>

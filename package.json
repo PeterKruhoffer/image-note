@@ -4,7 +4,6 @@
   "private": true,
   "description": "Turn screenshots into concise notes with Cloudflare Workers AI",
   "keywords": [
-    "agents",
     "cloudflare",
     "notes",
     "vision"
@@ -23,24 +22,18 @@
   "dependencies": {
     "@clerk/backend": "^3.11.3",
     "@clerk/react": "^6.12.2",
-    "@cloudflare/ai-chat": "^0.9.1",
     "@cloudflare/kumo": "^2.6.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@streamdown/code": "^1.1.1",
-    "agents": "^0.17.1",
     "ai": "^6.0.197",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^8.2.0",
-    "streamdown": "^2.5.0",
     "workers-ai-provider": "^3.2.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@babel/plugin-proposal-decorators": "^8.0.2",
     "@cloudflare/vite-plugin": "1.42.3",
     "@cloudflare/workers-types": "^4.20260628.1",
-    "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/vite": "^4.3.1",
     "@types/node": "^26.0.1",
     "@types/react": "^19.2.17",

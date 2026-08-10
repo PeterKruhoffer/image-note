@@ -1,4 +1,4 @@
-import { MAX_IMAGE_DIMENSION } from "../../image-limits";
+import { MAX_IMAGE_BYTES, MAX_IMAGE_DIMENSION } from "../../image-limits";
 
 export const IMAGE_INPUT_ACCEPT = "image/png,image/jpeg,image/webp";
 
@@ -12,13 +12,13 @@ export function isSupportedImage(file: File) {
   return SUPPORTED_IMAGE_TYPES.has(file.type);
 }
 
-export interface Attachment {
+export interface ImageAttachment {
   id: string;
   file: File;
   preview: string;
 }
 
-export function createAttachment(file: File): Attachment {
+export function createImageAttachment(file: File): ImageAttachment {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     file,
@@ -31,7 +31,7 @@ export interface PreparedImage {
   url: string;
 }
 
-export function fileToDataUri(file: Blob): Promise<string> {
+function fileToDataUri(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -56,10 +56,7 @@ function canvasToBlob(
   });
 }
 
-export async function prepareImage(
-  file: File,
-  maxBytes: number
-): Promise<PreparedImage> {
+export async function prepareImage(file: File): Promise<PreparedImage> {
   const bitmap = await createImageBitmap(file);
   try {
     const initialScale = Math.min(
@@ -71,7 +68,7 @@ export async function prepareImage(
 
     if (
       initialScale === 1 &&
-      file.size <= maxBytes &&
+      file.size <= MAX_IMAGE_BYTES &&
       SUPPORTED_IMAGE_TYPES.has(file.type)
     ) {
       return { mediaType: file.type, url: await fileToDataUri(file) };
@@ -89,7 +86,7 @@ export async function prepareImage(
 
       for (const quality of qualities) {
         const blob = await canvasToBlob(canvas, quality);
-        if (blob.size <= maxBytes) {
+        if (blob.size <= MAX_IMAGE_BYTES) {
           return { mediaType: blob.type, url: await fileToDataUri(blob) };
         }
       }
@@ -98,7 +95,7 @@ export async function prepareImage(
       height = Math.max(1, Math.round(height * 0.8));
     }
 
-    throw new Error("The image is too large to attach.");
+    throw new Error("The image is too large to analyze.");
   } finally {
     bitmap.close();
   }

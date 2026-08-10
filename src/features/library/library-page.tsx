@@ -249,7 +249,7 @@ export function LibraryPage() {
           type="button"
           className="library-brand"
           onClick={() => void navigate("/")}
-          aria-label="Back to chat"
+          aria-label="Back to home"
         >
           <span className="library-brand-mark">IM</span>
           <span>
@@ -265,7 +265,7 @@ export function LibraryPage() {
             icon={<ArrowLeftIcon size={16} />}
             onClick={() => void navigate("/")}
           >
-            Back to chat
+            Back to home
           </Button>
         </div>
       </header>
@@ -553,8 +553,8 @@ function EmptyLibrary({ onAdd }: { onAdd: () => void }) {
       <p className="library-eyebrow">Your personal knowledge library</p>
       <h1>A good library starts with one useful thought.</h1>
       <p>
-        Add a screenshot in chat, choose the note that captures it best, and it
-        will be waiting here when you need it.
+        Add a screenshot, choose the note that captures it best, and it will be
+        waiting here when you need it.
       </p>
       <Button variant="primary" onClick={onAdd}>
         Add your first screenshot
