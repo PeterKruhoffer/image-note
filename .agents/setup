@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+NODE_VERSION="22.22.0"
+PNPM_VERSION="11.1.3"
+NODE_ROOT="$HOME/.local/share/nodejs"
+NODE_HOME="$NODE_ROOT/node-v${NODE_VERSION}-linux-x64"
+
+step() {
+  local label="$1"
+  shift
+  local started=$SECONDS
+  printf '==> %s\n' "$label"
+  "$@"
+  printf '    completed in %ss\n' "$((SECONDS - started))"
+}
+
+install_node() {
+  local arch archive download_dir
+
+  case "$(uname -m)" in
+    x86_64) arch="x64" ;;
+    aarch64 | arm64) arch="arm64" ;;
+    *)
+      printf 'Unsupported architecture: %s\n' "$(uname -m)" >&2
+      return 1
+      ;;
+  esac
+
+  NODE_HOME="$NODE_ROOT/node-v${NODE_VERSION}-linux-${arch}"
+  if [[ -x "$NODE_HOME/bin/node" ]] && [[ "$($NODE_HOME/bin/node --version)" == "v$NODE_VERSION" ]]; then
+    return
+  fi
+
+  archive="node-v${NODE_VERSION}-linux-${arch}.tar.gz"
+  download_dir="$(mktemp -d)"
+  trap 'rm -rf -- "${download_dir:-}"' EXIT
+
+  curl --fail --location --retry 3 --output "$download_dir/$archive" \
+    "https://nodejs.org/dist/v${NODE_VERSION}/${archive}"
+  curl --fail --location --retry 3 --output "$download_dir/SHASUMS256.txt" \
+    "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+  (
+    cd "$download_dir"
+    grep "  ${archive}$" SHASUMS256.txt | sha256sum --check --strict
+  )
+
+  mkdir -p "$NODE_ROOT"
+  tar -xzf "$download_dir/$archive" -C "$NODE_ROOT"
+  rm -rf -- "$download_dir"
+  trap - EXIT
+}
+
+link_node_tools() {
+  mkdir -p "$HOME/.local/bin"
+  for tool in node npm npx corepack; do
+    ln -sfn "$NODE_HOME/bin/$tool" "$HOME/.local/bin/$tool"
+  done
+  hash -r
+}
+
+install_pnpm() {
+  if [[ -x "$HOME/.local/bin/pnpm" ]] && [[ "$("$HOME/.local/bin/pnpm" --version)" == "$PNPM_VERSION" ]]; then
+    return
+  fi
+
+  corepack enable --install-directory "$HOME/.local/bin" pnpm
+  corepack install --global "pnpm@$PNPM_VERSION"
+  hash -r
+}
+
+install_dependencies() {
+  pnpm install --frozen-lockfile
+}
+
+step "Install Node.js $NODE_VERSION" install_node
+step "Expose Node.js tools" link_node_tools
+step "Install pnpm $PNPM_VERSION" install_pnpm
+step "Install project dependencies" install_dependencies
+
+printf 'Orb setup complete (Node %s, pnpm %s).\n' "$(node --version)" "$(pnpm --version)"

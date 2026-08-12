@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# This project has no local databases, tunnels, or other backing services to
+# repair after an orb wakes. Long-lived development servers are started only
+# when requested.
+printf 'No orb services need to be resumed.\n'
