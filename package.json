@@ -24,7 +24,7 @@
     "@clerk/react": "^6.14.1",
     "@cloudflare/kumo": "^2.9.2",
     "@phosphor-icons/react": "^2.1.10",
-    "ai": "^6.0.248",
+    "ai": "^6.0.277",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router": "^8.3.0",
@@ -32,8 +32,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.42.3",
-    "@cloudflare/workers-types": "^4.20260702.1",
+    "@cloudflare/vite-plugin": "1.54.5",
+    "@cloudflare/workers-types": "^5.20260907.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
@@ -44,13 +44,13 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.2.1",
-    "wrangler": "4.105.0"
+    "wrangler": "4.129.1"
   },
   "allowScripts": {
     "core-js-pure@3.49.0": true,
     "esbuild@0.28.1": true,
-    "workerd@1.20260625.1": true,
-    "sharp@0.34.5": true,
+    "workerd@1.20260907.1": true,
+    "sharp@0.35.2": true,
     "fsevents@2.3.3": true
   }
 }
